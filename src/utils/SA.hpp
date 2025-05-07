@@ -23,6 +23,10 @@ private:
     // Cost of the best solution
     int bestCost;
     
+    vector<string> moduleNameCache;
+    vector<string> symGroupNameCache;
+    bool cacheInitialized;
+
     // SA parameters
     double initialTemperature;
     double finalTemperature;
@@ -160,6 +164,8 @@ public:
                       int iterations = 100,
                       int noImprovementLimit = 1000,
                       int timeLimit = 300); // 5 minute default
+
+    void initializeNameCache();
     
     /**
      * Sets the perturbation probabilities

@@ -14,6 +14,17 @@ Module::Module(const Module& other)
       x(other.x), y(other.y), isRotated(other.isRotated) {
 }
 
+bool Module::overlaps(const Module& other) const {
+    // Check if two modules overlap
+    if (x + getWidth() <= other.x || other.x + other.getWidth() <= x) {
+        return false; // No horizontal overlap
+    }
+    if (y + getHeight() <= other.y || other.y + other.getHeight() <= y) {
+        return false; // No vertical overlap
+    }
+    return true; // There is overlap
+}
+
 // Getters
 const std::string& Module::getName() const {
     return name;
@@ -64,17 +75,6 @@ void Module::setRotation(bool rotate) {
 // Utility functions
 int Module::getArea() const {
     return width * height; // Area doesn't change with rotation
-}
-
-bool Module::overlaps(const Module& other) const {
-    // Check if two modules overlap
-    if (x + getWidth() <= other.x || other.x + other.getWidth() <= x) {
-        return false; // No horizontal overlap
-    }
-    if (y + getHeight() <= other.y || other.y + other.getHeight() <= y) {
-        return false; // No vertical overlap
-    }
-    return true; // There is overlap
 }
 
 int Module::getRight() const {

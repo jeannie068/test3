@@ -37,7 +37,8 @@ SimulatedAnnealing::SimulatedAnnealing(std::shared_ptr<HBStarTree> initialSoluti
       noImprovementCount(0),
       areaWeight(1.0),
       wirelengthWeight(0.0),
-      lastPerturbation(PerturbationType::NONE) {
+      lastPerturbation(PerturbationType::NONE),
+      cacheInitialized(false) {
     
     // Initialize random number generator with current time
     rng.seed(static_cast<unsigned int>(std::time(nullptr)));
@@ -54,8 +55,31 @@ SimulatedAnnealing::SimulatedAnnealing(std::shared_ptr<HBStarTree> initialSoluti
     bestSolution = currentSolution->clone();
     bestCost = currentCost;
     
+    // Initialize the name cache
+    initializeNameCache();
+    
     // Precompute solution information
     precomputeSolutionInfo();
+}
+
+/**
+ * Initialize name cache for faster random selection
+ */
+void SimulatedAnnealing::initializeNameCache() {
+    if (cacheInitialized) return;
+    
+    moduleNameCache.clear();
+    symGroupNameCache.clear();
+    
+    for (const auto& pair : currentSolution->getModules()) {
+        moduleNameCache.push_back(pair.first);
+    }
+    
+    for (const auto& group : currentSolution->getSymmetryGroups()) {
+        symGroupNameCache.push_back(group->getName());
+    }
+    
+    cacheInitialized = true;
 }
 
 /**
@@ -174,7 +198,67 @@ bool SimulatedAnnealing::perturb() {
         if (success) lastPerturbation = PerturbationType::CONVERT_SYM;
     }
     
-    return success;
+    if (!success) return false;
+    
+    // Perform incremental packing
+    if (!currentSolution->incrementalPack()) {
+        currentSolution->pack();
+    }
+    
+    // Check for symmetry constraints
+    bool symConstraintsValid = true;
+    for (const auto& symGroup : currentSolution->getSymmetryGroups()) {
+        auto node = currentSolution->getSymmetryGroupNode(symGroup->getName());
+        if (node) {
+            auto asfTree = node->getASFTree();
+            if (asfTree && !asfTree->validateSymmetryConstraints()) {
+                symConstraintsValid = false;
+                break;
+            }
+            
+            // Also check for symmetry island validity
+            if (asfTree && !asfTree->isSymmetryIslandValid()) {
+                symConstraintsValid = false;
+                break;
+            }
+        }
+    }
+    
+    // Check for overlaps
+    bool noOverlaps = !currentSolution->hasOverlap();
+    
+    // If invalid, revert the perturbation
+    if (!symConstraintsValid || !noOverlaps) {
+        // Revert the perturbation
+        switch (lastPerturbation) {
+            case PerturbationType::ROTATE:
+                currentSolution->rotateModule(lastModule1);
+                break;
+            case PerturbationType::MOVE:
+                // For move operations, it's complex to revert directly
+                // Just do a full pack to restore consistency
+                currentSolution->pack();
+                break;
+            case PerturbationType::SWAP:
+                // Swap the nodes back
+                currentSolution->swapNodes(lastModule1, lastModule2);
+                break;
+            case PerturbationType::CHANGE_REP:
+                // Change representative back
+                currentSolution->changeRepresentative(lastSymGroup, lastModule1);
+                break;
+            case PerturbationType::CONVERT_SYM:
+                // Convert symmetry type back
+                currentSolution->convertSymmetryType(lastSymGroup);
+                break;
+            case PerturbationType::NONE:
+                // Nothing to revert
+                break;
+        }
+        return false;
+    }
+    
+    return true;
 }
 
 /**
@@ -269,29 +353,20 @@ bool SimulatedAnnealing::perturbConvertSymmetryType() {
  * Select a random module
  */
 std::string SimulatedAnnealing::selectRandomModule() const {
-    const auto& modules = currentSolution->getModules();
-    if (modules.empty()) return "";
+    if (moduleNameCache.empty()) return "";
     
-    // Convert map to vector for random selection
-    std::vector<std::string> moduleNames;
-    moduleNames.reserve(modules.size());
-    for (const auto& pair : modules) {
-        moduleNames.push_back(pair.first);
-    }
-    
-    std::uniform_int_distribution<int> dist(0, moduleNames.size() - 1);
-    return moduleNames[dist(rng)];
+    std::uniform_int_distribution<int> dist(0, moduleNameCache.size() - 1);
+    return moduleNameCache[dist(rng)];
 }
 
 /**
  * Select a random symmetry group
  */
 std::string SimulatedAnnealing::selectRandomSymmetryGroup() const {
-    const auto& symmetryGroups = currentSolution->getSymmetryGroups();
-    if (symmetryGroups.empty()) return "";
+    if (symGroupNameCache.empty()) return "";
     
-    std::uniform_int_distribution<int> dist(0, symmetryGroups.size() - 1);
-    return symmetryGroups[dist(rng)]->getName();
+    std::uniform_int_distribution<int> dist(0, symGroupNameCache.size() - 1);
+    return symGroupNameCache[dist(rng)];
 }
 
 /**
@@ -299,24 +374,19 @@ std::string SimulatedAnnealing::selectRandomSymmetryGroup() const {
  */
 std::string SimulatedAnnealing::selectRandomNode() const {
     // Decide whether to select a module or a symmetry group
-    const auto& modules = currentSolution->getModules();
-    const auto& symmetryGroups = currentSolution->getSymmetryGroups();
-    
-    int totalNodes = modules.size() + symmetryGroups.size();
+    int totalNodes = moduleNameCache.size() + symGroupNameCache.size();
     if (totalNodes == 0) return "";
     
     std::uniform_int_distribution<int> dist(0, totalNodes - 1);
     int index = dist(rng);
     
-    if (index < static_cast<int>(modules.size())) {
+    if (index < static_cast<int>(moduleNameCache.size())) {
         // Select a module
-        auto it = modules.begin();
-        std::advance(it, index);
-        return it->first;
+        return moduleNameCache[index];
     } else {
         // Select a symmetry group
-        index -= modules.size();
-        return symmetryGroups[index]->getName();
+        index -= moduleNameCache.size();
+        return symGroupNameCache[index];
     }
 }
 
@@ -392,13 +462,7 @@ std::shared_ptr<HBStarTree> SimulatedAnnealing::run() {
                 
                 // Update best solution if improved
                 if (currentCost < bestCost) {
-                    if (!bestSolution) {
-                        bestSolution = currentSolution->clone();
-                    } else {
-                        // Clear previous best solution to avoid memory leak
-                        bestSolution.reset();
-                        bestSolution = currentSolution->clone();
-                    }
+                    bestSolution = currentSolution->clone();
                     bestCost = currentCost;
                     noImprovementCount = 0;
                 } else {

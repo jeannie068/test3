@@ -156,6 +156,13 @@ public:
      * @return True if the conversion was successful, false otherwise
      */
     bool convertSymmetryType(const string& symmetryGroupName);
+
+    /**
+     * Checks if the placement has any module overlaps
+     * 
+     * @return True if there are overlaps, false otherwise
+     */
+    bool hasOverlap() const;
     
     /* Returns the total area of the placement */
     int getArea() const;

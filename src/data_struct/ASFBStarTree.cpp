@@ -301,6 +301,220 @@ bool ASFBStarTree::pack() {
 }
 
 /**
+ * Validates that all symmetry constraints are satisfied
+ */
+bool ASFBStarTree::validateSymmetryConstraints() const {
+    if (!symmetryGroup) return true;
+    
+    // Check each self-symmetric module is on the correct branch
+    for (const auto& moduleName : selfSymmetricModules) {
+        if (!isOnCorrectBranch(moduleName)) {
+            return false;
+        }
+    }
+    
+    // Check symmetry pairs have correct positions
+    for (const auto& pair : symmetryGroup->getSymmetryPairs()) {
+        const auto& module1 = modules.find(pair.first);
+        const auto& module2 = modules.find(pair.second);
+        
+        if (module1 == modules.end() || module2 == modules.end()) continue;
+        
+        const auto& mod1 = module1->second;
+        const auto& mod2 = module2->second;
+        
+        if (symmetryGroup->getType() == SymmetryType::VERTICAL) {
+            // Check x-coordinate reflection and y-coordinate equality
+            int x1Center = mod1->getX() + mod1->getWidth()/2;
+            int x2Center = mod2->getX() + mod2->getWidth()/2;
+            
+            // x1 + x2 = 2 * symmetryAxis
+            if (abs((x1Center + x2Center) - 2 * static_cast<int>(symmetryAxisPosition)) > 1) {
+                return false;
+            }
+            
+            // y1 should equal y2
+            if (abs(mod1->getY() - mod2->getY()) > 1) {
+                return false;
+            }
+        } else { // HORIZONTAL
+            // Check y-coordinate reflection and x-coordinate equality
+            int y1Center = mod1->getY() + mod1->getHeight()/2;
+            int y2Center = mod2->getY() + mod2->getHeight()/2;
+            
+            // y1 + y2 = 2 * symmetryAxis
+            if (abs((y1Center + y2Center) - 2 * static_cast<int>(symmetryAxisPosition)) > 1) {
+                return false;
+            }
+            
+            // x1 should equal x2
+            if (abs(mod1->getX() - mod2->getX()) > 1) {
+                return false;
+            }
+        }
+    }
+    
+    // Check self-symmetric modules are centered on the axis
+    for (const auto& moduleName : selfSymmetricModules) {
+        auto it = modules.find(moduleName);
+        if (it == modules.end()) continue;
+        
+        const auto& module = it->second;
+        
+        if (symmetryGroup->getType() == SymmetryType::VERTICAL) {
+            // Center should be on the axis
+            int xCenter = module->getX() + module->getWidth()/2;
+            if (abs(xCenter - static_cast<int>(symmetryAxisPosition)) > 1) {
+                return false;
+            }
+        } else { // HORIZONTAL
+            // Center should be on the axis
+            int yCenter = module->getY() + module->getHeight()/2;
+            if (abs(yCenter - static_cast<int>(symmetryAxisPosition)) > 1) {
+                return false;
+            }
+        }
+    }
+    
+    return true;
+}
+
+/**
+ * Checks if a module is on the correct branch according to Property 1
+ */
+bool ASFBStarTree::isOnCorrectBranch(const string& moduleName) const {
+    // Skip check if not a self-symmetric module
+    if (find(selfSymmetricModules.begin(), selfSymmetricModules.end(), moduleName) == selfSymmetricModules.end()) {
+        return true;
+    }
+    
+    // Find the node for this module in the tree
+    shared_ptr<BStarTreeNode> node = nullptr;
+    
+    // Find the node in the B*-tree (simplified - actual implementation would track nodes directly)
+    queue<shared_ptr<BStarTreeNode>> q;
+    if (root) q.push(root);
+    
+    while (!q.empty() && !node) {
+        auto current = q.front();
+        q.pop();
+        
+        if (current->getModuleName() == moduleName) {
+            node = current;
+        } else {
+            if (current->getLeftChild()) q.push(current->getLeftChild());
+            if (current->getRightChild()) q.push(current->getRightChild());
+        }
+    }
+    
+    if (!node) return false;
+    
+    // For vertical symmetry, self-symmetric modules must be on the rightmost branch
+    if (symmetryGroup->getType() == SymmetryType::VERTICAL) {
+        while (node && node->getParent()) {
+            if (node->isLeftChild()) {
+                return false; // Not on rightmost branch
+            }
+            node = node->getParent();
+        }
+    } else { // HORIZONTAL
+        while (node && node->getParent()) {
+            if (node->isRightChild()) {
+                return false; // Not on leftmost branch
+            }
+            node = node->getParent();
+        }
+    }
+    
+    return true;
+}
+
+/**
+ * Validates that the placement forms a symmetry island
+ */
+bool ASFBStarTree::isSymmetryIslandValid() const {
+    if (modules.empty()) return true;
+    
+    // Build adjacency list for all modules in the symmetry group
+    unordered_map<string, vector<string>> adjacency;
+    
+    // Get all module positions
+    unordered_map<string, pair<int, int>> positions;
+    unordered_map<string, pair<int, int>> dimensions;
+    
+    for (const auto& pair : modules) {
+        const auto& module = pair.second;
+        positions[pair.first] = {module->getX(), module->getY()};
+        dimensions[pair.first] = {module->getWidth(), module->getHeight()};
+    }
+    
+    // Build adjacency list based on abutting modules
+    for (const auto& pair1 : modules) {
+        const auto& name1 = pair1.first;
+        const auto& pos1 = positions[name1];
+        const auto& dim1 = dimensions[name1];
+        
+        for (const auto& pair2 : modules) {
+            const auto& name2 = pair2.first;
+            if (name1 == name2) continue;
+            
+            const auto& pos2 = positions[name2];
+            const auto& dim2 = dimensions[name2];
+            
+            // Check if modules are adjacent
+            bool adjacent = false;
+            
+            // Check horizontal adjacency
+            if (pos1.first + dim1.first == pos2.first || 
+                pos2.first + dim2.first == pos1.first) {
+                // Check vertical overlap
+                if (!(pos1.second >= pos2.second + dim2.second || 
+                      pos2.second >= pos1.second + dim1.second)) {
+                    adjacent = true;
+                }
+            }
+            
+            // Check vertical adjacency
+            if (pos1.second + dim1.second == pos2.second || 
+                pos2.second + dim2.second == pos1.second) {
+                // Check horizontal overlap
+                if (!(pos1.first >= pos2.first + dim2.first || 
+                      pos2.first >= pos1.first + dim1.first)) {
+                    adjacent = true;
+                }
+            }
+            
+            if (adjacent) {
+                adjacency[name1].push_back(name2);
+            }
+        }
+    }
+    
+    // Perform BFS to check connectivity
+    unordered_set<string> visited;
+    queue<string> q;
+    
+    auto it = modules.begin();
+    q.push(it->first);
+    visited.insert(it->first);
+    
+    while (!q.empty()) {
+        string current = q.front();
+        q.pop();
+        
+        for (const auto& neighbor : adjacency[current]) {
+            if (visited.find(neighbor) == visited.end()) {
+                visited.insert(neighbor);
+                q.push(neighbor);
+            }
+        }
+    }
+    
+    // Check if all modules are visited
+    return visited.size() == modules.size();
+}
+
+/**
  * Checks if the tree satisfies the symmetric-feasible condition
  */
 bool ASFBStarTree::isSymmetricFeasible() const {
@@ -470,17 +684,17 @@ bool ASFBStarTree::canMoveNode(const shared_ptr<BStarTreeNode>& node,
 bool ASFBStarTree::moveNode(const string& nodeName, 
                            const string& newParentName, 
                            bool asLeftChild) {
-    // Find the nodes
+    // Find the nodes...
     shared_ptr<BStarTreeNode> node = nullptr;
     shared_ptr<BStarTreeNode> newParent = nullptr;
     
-    // Find the node to move
-    queue<shared_ptr<BStarTreeNode>> queue;
-    if (root) queue.push(root);
+    // Find the node to move (simplified for clarity)
+    queue<shared_ptr<BStarTreeNode>> q;
+    if (root) q.push(root);
     
-    while (!queue.empty() && (!node || !newParent)) {
-        auto current = queue.front();
-        queue.pop();
+    while (!q.empty() && (!node || !newParent)) {
+        auto current = q.front();
+        q.pop();
         
         if (current->getModuleName() == nodeName) {
             node = current;
@@ -489,15 +703,46 @@ bool ASFBStarTree::moveNode(const string& nodeName,
             newParent = current;
         }
         
-        if (current->getLeftChild()) queue.push(current->getLeftChild());
-        if (current->getRightChild()) queue.push(current->getRightChild());
+        if (current->getLeftChild()) q.push(current->getLeftChild());
+        if (current->getRightChild()) q.push(current->getRightChild());
     }
     
     if (!node || !newParent) return false;
     
-    // Check if the move is valid
-    if (!canMoveNode(node, newParent, asLeftChild)) {
-        return false;
+    // Check if nodeName is a self-symmetric module
+    bool isSelfSymmetric = find(selfSymmetricModules.begin(), 
+                               selfSymmetricModules.end(), 
+                               nodeName) != selfSymmetricModules.end();
+    
+    // Enforce Property 1 for self-symmetric modules
+    if (isSelfSymmetric) {
+        if (symmetryGroup->getType() == SymmetryType::VERTICAL && asLeftChild) {
+            // Can't move a self-symmetric module as a left child for vertical symmetry
+            return false;
+        } else if (symmetryGroup->getType() == SymmetryType::HORIZONTAL && !asLeftChild) {
+            // Can't move a self-symmetric module as a right child for horizontal symmetry
+            return false;
+        }
+        
+        // Also verify that new parent is on the correct branch
+        bool isValidPath = true;
+        auto parent = newParent;
+        while (parent && parent != root) {
+            if (symmetryGroup->getType() == SymmetryType::VERTICAL) {
+                if (parent->isLeftChild()) {
+                    isValidPath = false;
+                    break;
+                }
+            } else { // HORIZONTAL
+                if (parent->isRightChild()) {
+                    isValidPath = false;
+                    break;
+                }
+            }
+            parent = parent->getParent();
+        }
+        
+        if (!isValidPath) return false;
     }
     
     // Remove the node from its current parent

@@ -16,6 +16,14 @@ public:
     // Constructors
     Module(const std::string& name, int width, int height);
     Module(const Module& other); // Copy constructor
+
+    /**
+     * Checks if this module overlaps with another module
+     * 
+     * @param other The other module to check for overlap
+     * @return True if the modules overlap, false otherwise
+     */
+    bool overlaps(const Module& other) const;
     
     // Getters
     const std::string& getName() const;
@@ -34,7 +42,6 @@ public:
     
     // Utility functions
     int getArea() const;
-    bool overlaps(const Module& other) const;
     
     // Boundary points
     int getRight() const; // x + width

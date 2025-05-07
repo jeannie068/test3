@@ -63,6 +63,10 @@ public:
     
     // Constructs an initial ASF-B*-tree based on the symmetry group
     void constructInitialTree(); 
+
+    bool validateSymmetryConstraints() const;
+    bool isOnCorrectBranch(const string& moduleName) const;
+    bool isSymmetryIslandValid() const;
     
     /**
      * Calculates the coordinates of all modules in the symmetry group
