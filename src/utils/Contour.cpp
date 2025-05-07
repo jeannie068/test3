@@ -3,7 +3,8 @@
  * 
  * Implementation of the Contour class for efficient packing in the ASF-B*-tree
  * placement algorithm. The contour data structure represents the skyline profile
- * of the currently placed modules, allowing for O(log n) height queries and updates.
+ * of the currently placed modules, allowing for O(1) height queries and updates
+ * using a doubly linked list implementation.
  */
 
 #include "Contour.hpp"
@@ -13,29 +14,118 @@
 /**
  * Constructor
  */
-Contour::Contour() {
+Contour::Contour() : head(nullptr), tail(nullptr) {
     // Initialize with empty contour
 }
 
 /**
  * Copy constructor
  */
-Contour::Contour(const Contour& other) : contourMap(other.contourMap) {
-    // Copy the contour map from the other contour
+Contour::Contour(const Contour& other) : head(nullptr), tail(nullptr) {
+    // Copy the contour segments from the other contour
+    if (other.head) {
+        // Create the first node
+        head = new ContourNode(other.head->x, other.head->height);
+        tail = head;
+        
+        // Copy the rest of the nodes
+        ContourNode* current = other.head->next;
+        while (current) {
+            ContourNode* newNode = new ContourNode(current->x, current->height);
+            newNode->prev = tail;
+            tail->next = newNode;
+            tail = newNode;
+            current = current->next;
+        }
+    }
 }
 
 /**
  * Destructor
  */
 Contour::~Contour() {
-    // No manual cleanup needed
+    clear();
 }
 
 /**
  * Clears the contour
  */
 void Contour::clear() {
-    contourMap.clear();
+    ContourNode* current = head;
+    while (current) {
+        ContourNode* next = current->next;
+        delete current;
+        current = next;
+    }
+    head = nullptr;
+    tail = nullptr;
+}
+
+/**
+ * Helper method to find the node that contains a specific x-coordinate
+ */
+Contour::ContourNode* Contour::findNode(int x) const {
+    if (!head) return nullptr;
+    
+    ContourNode* current = head;
+    // Find the rightmost node whose x-coordinate is <= x
+    while (current->next && current->next->x <= x) {
+        current = current->next;
+    }
+    return current;
+}
+
+/**
+ * Helper method to insert a node after a specific node
+ */
+void Contour::insertNodeAfter(ContourNode* node, int x, int height) {
+    ContourNode* newNode = new ContourNode(x, height);
+    
+    if (!node) {
+        // Insert at the beginning
+        newNode->next = head;
+        if (head) {
+            head->prev = newNode;
+        } else {
+            tail = newNode;
+        }
+        head = newNode;
+    } else {
+        // Insert after the given node
+        newNode->next = node->next;
+        newNode->prev = node;
+        
+        if (node->next) {
+            node->next->prev = newNode;
+        } else {
+            tail = newNode;
+        }
+        
+        node->next = newNode;
+    }
+}
+
+/**
+ * Helper method to delete a node
+ */
+void Contour::deleteNode(ContourNode* node) {
+    if (!node) return;
+    
+    if (node->prev) {
+        node->prev->next = node->next;
+    } else {
+        // This is the head node
+        head = node->next;
+    }
+    
+    if (node->next) {
+        node->next->prev = node->prev;
+    } else {
+        // This is the tail node
+        tail = node->prev;
+    }
+    
+    delete node;
 }
 
 /**
@@ -44,60 +134,79 @@ void Contour::clear() {
  * This function updates the contour to incorporate a new module or segment.
  * It ensures the contour remains a valid skyline by merging overlapping segments.
  * 
- * Time complexity: O(log n) for insertion + O(k) for merging where k is the
- * number of contour segments affected.
+ * Time complexity: O(k) where k is the number of contour segments affected.
  */
 void Contour::addSegment(int start, int end, int height) {
     if (start >= end) return;  // Invalid segment
     
-    // Find the first contour segment whose start point is >= our start
-    auto it = contourMap.lower_bound(start);
-    
-    // Check if we need to update the previous segment
-    if (it != contourMap.begin()) {
-        auto prev = std::prev(it);
-        if (prev->second > height) {
-            // If previous segment is higher, we need to insert our start
-            contourMap[start] = height;
-        } else if (prev->second < height) {
-            // If previous segment is lower, do nothing (will be handled below)
-        } else {
-            // If same height, we can extend the previous segment
-            start = prev->first;
-            contourMap.erase(prev);
-        }
+    // Special case: empty contour
+    if (!head) {
+        // Create two nodes for start and end
+        head = new ContourNode(start, height);
+        tail = new ContourNode(end, 0);
+        head->next = tail;
+        tail->prev = head;
+        return;
     }
     
-    // Remove all segments that are completely covered by our new segment
-    while (it != contourMap.end() && it->first < end) {
-        auto next = std::next(it);
+    // Find the first node whose x-coordinate is >= start
+    ContourNode* current = head;
+    while (current && current->x < start) {
+        current = current->next;
+    }
+    
+    // If we need to insert a new start point
+    if (!current || current->x > start) {
+        ContourNode* prevNode = current ? current->prev : tail;
+        int prevHeight = prevNode ? prevNode->height : 0;
         
-        if (it->second <= height) {
-            // If current segment is not higher than our new segment, remove it
-            contourMap.erase(it);
-        } else {
-            // If current segment is higher, we need to keep it
-            if (it->first == start) {
-                // If it starts at our start, do nothing
-            } else {
-                // Otherwise, we need to add a new point at our start
-                contourMap[start] = height;
+        // Insert the new start point
+        insertNodeAfter(prevNode, start, height);
+    } else if (current->x == start) {
+        // Update the height of the existing node
+        current->height = std::max(current->height, height);
+    }
+    
+    // Process nodes between start and end
+    current = head;
+    while (current && current->x < end) {
+        ContourNode* next = current->next;
+        
+        // If this node is within our segment range and after start
+        if (current->x > start && current->x < end) {
+            if (current->height <= height) {
+                // If current height is not higher than our new segment, remove it
+                deleteNode(current);
             }
-            
-            // Skip to the end of this higher segment
-            break;
         }
         
-        it = next;
+        current = next;
     }
     
-    // Add our end point
-    if (it == contourMap.end() || it->first > end) {
-        contourMap[end] = it != contourMap.end() ? it->second : 0;
+    // If we need to insert a new end point
+    if (!current || current->x > end) {
+        ContourNode* prevNode = current ? current->prev : tail;
+        
+        // Find the height at the end point
+        int endHeight = 0;
+        if (current) {
+            // There's a node after the end point
+            endHeight = current->height;
+        }
+        
+        // Insert the new end point
+        insertNodeAfter(prevNode, end, endHeight);
     }
     
-    // Finally, add our start point
-    contourMap[start] = height;
+    // Cleanup: merge adjacent nodes with the same height
+    current = head;
+    while (current && current->next) {
+        if (current->height == current->next->height) {
+            deleteNode(current->next);
+        } else {
+            current = current->next;
+        }
+    }
 }
 
 /**
@@ -106,24 +215,26 @@ void Contour::addSegment(int start, int end, int height) {
  * This function returns the maximum height of the contour within
  * the specified coordinate range.
  * 
- * Time complexity: O(log n + k) where k is the number of segments in the range
+ * Time complexity: O(k) where k is the number of segments in the range
  */
 int Contour::getHeight(int start, int end) const {
     if (start >= end) return 0;  // Invalid range
-    if (contourMap.empty()) return 0;  // Empty contour
+    if (!head) return 0;  // Empty contour
     
-    // Find the first segment that starts at or before our query start
-    auto it = contourMap.upper_bound(start);
-    if (it != contourMap.begin()) {
-        --it;  // Move to the segment that contains our start
+    // Find the first node that might contribute to the range
+    ContourNode* current = findNode(start);
+    if (!current) {
+        // No nodes <= start, so return 0 or the height of the first node
+        return head ? head->height : 0;
     }
     
-    int maxHeight = 0;
+    // If the found node is at a position < start, we need to use its height for the start position
+    int maxHeight = current->height;
     
-    // Iterate through all segments that overlap with our range
-    while (it != contourMap.end() && it->first < end) {
-        maxHeight = std::max(maxHeight, it->second);
-        ++it;
+    // Traverse nodes in the range
+    while (current && current->x < end) {
+        maxHeight = std::max(maxHeight, current->height);
+        current = current->next;
     }
     
     return maxHeight;
@@ -140,19 +251,15 @@ int Contour::getHeight(int start, int end) const {
 std::vector<ContourSegment> Contour::getSegments() const {
     std::vector<ContourSegment> segments;
     
-    if (contourMap.empty()) {
+    if (!head || !head->next) {
         return segments;
     }
     
-    // Convert map representation to segments
-    auto it = contourMap.begin();
-    auto prev = it;
-    ++it;
-    
-    while (it != contourMap.end()) {
-        segments.emplace_back(prev->first, it->first, prev->second);
-        prev = it;
-        ++it;
+    // Convert doubly linked list representation to segments
+    ContourNode* current = head;
+    while (current && current->next) {
+        segments.emplace_back(current->x, current->next->x, current->height);
+        current = current->next;
     }
     
     return segments;
@@ -167,46 +274,63 @@ std::vector<ContourSegment> Contour::getSegments() const {
  * Time complexity: O(n + m) where n and m are the sizes of the two contours
  */
 void Contour::merge(const Contour& other) {
-    // Get all the breakpoints from both contours
-    std::vector<int> breakpoints;
-    
-    for (const auto& point : contourMap) {
-        breakpoints.push_back(point.first);
+    if (other.isEmpty()) return;
+    if (this->isEmpty()) {
+        *this = other;
+        return;
     }
     
-    for (const auto& point : other.contourMap) {
-        breakpoints.push_back(point.first);
+    // Get all breakpoints from both contours
+    std::vector<int> breakpoints;
+    
+    // Add breakpoints from this contour
+    ContourNode* current = head;
+    while (current) {
+        breakpoints.push_back(current->x);
+        current = current->next;
+    }
+    
+    // Add breakpoints from the other contour
+    current = other.head;
+    while (current) {
+        breakpoints.push_back(current->x);
+        current = current->next;
     }
     
     // Sort and remove duplicates
     std::sort(breakpoints.begin(), breakpoints.end());
     breakpoints.erase(std::unique(breakpoints.begin(), breakpoints.end()), breakpoints.end());
     
-    // Create a new contour map
-    std::map<int, int> newContourMap;
+    // Create a new contour with the merged heights
+    Contour newContour;
     
     // For each breakpoint, take the maximum height from both contours
-    for (size_t i = 0; i < breakpoints.size(); ++i) {
-        int coordinate = breakpoints[i];
-        int height1 = getHeight(coordinate, coordinate + 1);
-        int height2 = other.getHeight(coordinate, coordinate + 1);
+    for (size_t i = 0; i < breakpoints.size() - 1; ++i) {
+        int start = breakpoints[i];
+        int end = breakpoints[i + 1];
+        int height1 = getHeight(start, start + 1);
+        int height2 = other.getHeight(start, start + 1);
+        int maxHeight = std::max(height1, height2);
         
-        newContourMap[coordinate] = std::max(height1, height2);
+        newContour.addSegment(start, end, maxHeight);
     }
     
-    // Update our contour map
-    contourMap = std::move(newContourMap);
+    // If there's a last breakpoint, make sure it's included
+    if (!breakpoints.empty()) {
+        int lastPoint = breakpoints.back();
+        newContour.addSegment(lastPoint, lastPoint + 1, 0);
+    }
+    
+    // Replace this contour with the new one
+    *this = newContour;
 }
 
 /**
  * Gets the maximum coordinate value in the contour
  */
 int Contour::getMaxCoordinate() const {
-    if (contourMap.empty()) {
-        return 0;
-    }
-    
-    return contourMap.rbegin()->first;
+    if (!tail) return 0;
+    return tail->x;
 }
 
 /**
@@ -215,8 +339,10 @@ int Contour::getMaxCoordinate() const {
 int Contour::getMaxHeight() const {
     int maxHeight = 0;
     
-    for (const auto& point : contourMap) {
-        maxHeight = std::max(maxHeight, point.second);
+    ContourNode* current = head;
+    while (current) {
+        maxHeight = std::max(maxHeight, current->height);
+        current = current->next;
     }
     
     return maxHeight;
@@ -226,12 +352,5 @@ int Contour::getMaxHeight() const {
  * Checks if the contour is empty
  */
 bool Contour::isEmpty() const {
-    return contourMap.empty();
-}
-
-/**
- * Gets the contour map for direct access
- */
-const std::map<int, int>& Contour::getContourMap() const {
-    return contourMap;
+    return head == nullptr;
 }

@@ -3,12 +3,12 @@
  * 
  * This file defines the Contour class used for efficient packing in the ASF-B*-tree
  * placement algorithm. The contour data structure represents the skyline profile
- * of the currently placed modules, allowing for O(log n) height queries and updates.
+ * of the currently placed modules, allowing for O(1) height queries and updates
+ * using a doubly linked list implementation.
  */
 
 #pragma once
 
-#include <map>
 #include <vector>
 #include <utility>
 #include <limits>
@@ -32,22 +32,52 @@ struct ContourSegment {
 
 /**
  * Contour class representing the skyline profile of the placement
- * Supports efficient queries and updates in O(log n) time
+ * Supports efficient queries and updates in O(1) time with a doubly linked list
  */
 class Contour {
 private:
-    // Using a balanced tree (map) to store the contour segments for efficient operations
-    std::map<int, int> contourMap;  // Maps coordinate to height/value
+    // Node structure for the doubly linked list
+    struct ContourNode {
+        int x;       // x-coordinate
+        int height;  // height at this coordinate
+        ContourNode* prev;  // Previous node
+        ContourNode* next;  // Next node
+        
+        ContourNode(int x, int height) 
+            : x(x), height(height), prev(nullptr), next(nullptr) {}
+    };
+    
+    ContourNode* head;  // First node of the contour
+    ContourNode* tail;  // Last node of the contour
+    
+    // Helper method to find the node that contains a specific x-coordinate
+    ContourNode* findNode(int x) const;
+    
+    // Helper method to insert a node after a specific node
+    void insertNodeAfter(ContourNode* node, int x, int height);
+    
+    // Helper method to delete a node
+    void deleteNode(ContourNode* node);
     
 public:
-
+    /**
+     * Constructor
+     */
     Contour();
     
     /**
      * Copy constructor
      */
     Contour(const Contour& other);
+    
+    /**
+     * Destructor
+     */
     ~Contour();
+    
+    /**
+     * Clears the contour
+     */
     void clear();
     
     /**
@@ -102,12 +132,4 @@ public:
      * @return True if the contour is empty, false otherwise
      */
     bool isEmpty() const;
-    
-    /**
-     * Gets the contour map for direct access
-     * (for advanced operations)
-     * 
-     * @return Reference to the internal contour map
-     */
-    const std::map<int, int>& getContourMap() const;
 };

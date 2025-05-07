@@ -16,6 +16,8 @@
 #include <string>
 #include <utility>
 #include <set>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "HBStarTreeNode.hpp"
 #include "ASFBStarTree.hpp"
@@ -24,9 +26,11 @@
 #include "../utils/Contour.hpp"
 using namespace std;
 
+// Forward declaration to avoid circular dependency
+class ASFBStarTree;
+
 class HBStarTree {
 private:
-
     shared_ptr<HBStarTreeNode> root;
     
     map<string, shared_ptr<Module>> modules; // All modules
@@ -46,7 +50,11 @@ private:
     int totalArea;
     
     // Flag indicating whether the tree has been packed
-    bool isPacked;
+    bool packed;
+    
+    // Cache of affected modules and nodes for incremental packing
+    unordered_set<string> affectedModules;
+    unordered_set<shared_ptr<HBStarTreeNode>> affectedNodes;
     
     // Internal helper methods
     void updateContourNodes();
@@ -58,6 +66,16 @@ private:
     void constructInitialTreeStructure();
     void clearTree();
     
+    // Helper methods for incremental packing
+    bool packSubtree(shared_ptr<HBStarTreeNode> node);
+    bool packNode(shared_ptr<HBStarTreeNode> node);
+    bool packSymmetryIsland(shared_ptr<HBStarTreeNode> hierarchyNode);
+    bool updateContourForModule(const shared_ptr<Module>& module);
+    void markAffectedSubtree(shared_ptr<HBStarTreeNode> node);
+    void markAffectedModules(const string& moduleName);
+    void markAffectedSymmetryGroup(const string& symmetryGroupName);
+    void clearAffectedCache();
+    
 public:
     /**
      * Constructor
@@ -65,7 +83,7 @@ public:
     HBStarTree();
     ~HBStarTree();
     
-    /* Adds a module to the treec */
+    /* Adds a module to the tree */
     void addModule(shared_ptr<Module> module);
     
     /* Adds a symmetry group to the tree */
@@ -80,6 +98,18 @@ public:
      * @return True if packing was successful, false otherwise
      */
     bool pack();
+    
+    /**
+     * Incrementally updates the packing after a perturbation
+     * 
+     * @return True if incremental packing was successful, false otherwise
+     */
+    bool incrementalPack();
+    
+    /**
+     * Returns whether the tree has been packed
+     */
+    bool isPacked() const;
     
     /**
      * Performs a rotation operation on a module
@@ -173,6 +203,27 @@ public:
      * @return Symmetry group node with the given name, or nullptr if not found
      */
     shared_ptr<HBStarTreeNode> getSymmetryGroupNode(const string& symmetryGroupName) const;
+    
+    /**
+     * Marks a module as affected, needing repacking
+     * 
+     * @param moduleName Name of the affected module
+     */
+    void markModuleAffected(const string& moduleName);
+    
+    /**
+     * Marks a symmetry group as affected, needing repacking
+     * 
+     * @param symmetryGroupName Name of the affected symmetry group
+     */
+    void markSymmetryGroupAffected(const string& symmetryGroupName);
+    
+    /**
+     * Marks a node as affected, needing repacking
+     * 
+     * @param node The affected node
+     */
+    void markNodeAffected(shared_ptr<HBStarTreeNode> node);
     
     /**
      * Creates a deep copy of this HB*-tree

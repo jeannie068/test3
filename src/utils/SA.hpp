@@ -6,6 +6,7 @@
 #include <functional>
 #include <vector>
 #include <string>
+#include <chrono>
 #include "../data_struct/HBStarTree.hpp"
 
 class SimulatedAnnealing {
@@ -28,6 +29,7 @@ private:
     double coolingRate;
     int iterationsPerTemperature;
     int noImprovementLimit;
+    int timeLimit; // Time limit in seconds
     
     // Random number generation - mutable to allow usage in const methods
     mutable std::mt19937 rng;
@@ -45,10 +47,26 @@ private:
     int acceptedMoves;
     int rejectedMoves;
     int noImprovementCount;
+    std::chrono::steady_clock::time_point startTime;
     
     // Cost function weight parameters
     double areaWeight;
     double wirelengthWeight;
+    
+    // Cache of last perturbation to support incremental updates
+    enum class PerturbationType {
+        NONE,
+        ROTATE,
+        MOVE,
+        SWAP,
+        CHANGE_REP,
+        CONVERT_SYM
+    };
+    
+    PerturbationType lastPerturbation;
+    std::string lastModule1;
+    std::string lastModule2;
+    std::string lastSymGroup;
     
     /**
      * Calculates the cost of a solution
@@ -59,6 +77,12 @@ private:
      * Performs a random perturbation on the current solution
      */
     bool perturb();
+    
+    /**
+     * Performs incremental cost update after perturbation
+     * Returns the difference in cost (new - old)
+     */
+    int updateCostIncremental();
     
     /**
      * Rotates a random module
@@ -114,6 +138,16 @@ private:
      * @return Name of the selected node
      */
     std::string selectRandomNode() const;
+    
+    /**
+     * Checks if time limit is reached
+     */
+    bool isTimeLimitReached() const;
+    
+    /**
+     * Pre-compute solution information to avoid redundant calculations
+     */
+    void precomputeSolutionInfo();
 
 public:
     /**
@@ -122,9 +156,10 @@ public:
     SimulatedAnnealing(std::shared_ptr<HBStarTree> initialSolution,
                       double initialTemp = 1000.0,
                       double finalTemp = 0.1,
-                      double coolingRate = 0.95,
+                      double coolRate = 0.95,
                       int iterations = 100,
-                      int noImprovementLimit = 1000);
+                      int noImprovementLimit = 1000,
+                      int timeLimit = 300); // 5 minute default
     
     /**
      * Sets the perturbation probabilities
@@ -169,4 +204,11 @@ public:
      * @param seed Random seed
      */
     void setSeed(unsigned int seed);
+    
+    /**
+     * Sets the time limit in seconds
+     * 
+     * @param seconds Time limit in seconds
+     */
+    void setTimeLimit(int seconds);
 };
