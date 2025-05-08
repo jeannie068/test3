@@ -60,21 +60,20 @@ int main(int argc, char* argv[]) {
     // Load problem data
     solver.loadProblem(modules, symmetryGroups);
     
-    // Configure simulated annealing parameters
-    // These values can be tuned for better performance
+    // Configure simulated annealing parameters (optimized for better convergence)
     solver.setAnnealingParameters(
         1000.0,     // Initial temperature
         0.1,        // Final temperature
-        0.95,       // Cooling rate
-        100,        // Iterations per temperature
-        1000        // No improvement limit
+        0.98,       // Cooling rate (slower cooling for better exploration)
+        300,        // Iterations per temperature (increased for better exploration)
+        3000        // No improvement limit (increased to allow more exploration)
     );
     
-    // Configure perturbation probabilities
+    // Configure perturbation probabilities (favor rotation which is more effective)
     solver.setPerturbationProbabilities(
-        0.3,        // Rotate probability
-        0.3,        // Move probability
-        0.3,        // Swap probability
+        0.5,        // Rotate probability (increased from 0.3)
+        0.2,        // Move probability (decreased from 0.3)
+        0.2,        // Swap probability (decreased from 0.3)
         0.05,       // Change representative probability
         0.05        // Convert symmetry type probability
     );
@@ -85,8 +84,11 @@ int main(int argc, char* argv[]) {
         1.0 - areaRatio // Wirelength weight (complementary to area weight)
     );
     
-    // Set random seed for reproducibility (optional)
+    // Set random seed for reproducibility
     solver.setRandomSeed(static_cast<unsigned int>(time(nullptr)));
+    
+    // Set time limit to 290 seconds (4:50) to ensure completion within 5 minutes
+    solver.setTimeLimit(290);
     
     // Solve the placement problem
     std::cout << "Solving placement problem..." << std::endl;

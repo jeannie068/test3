@@ -1,30 +1,35 @@
+// PlacementSolver.hpp
 #pragma once
+
 #include <memory>
-#include <string>
 #include <vector>
 #include <map>
-#include "../data_struct/HBStarTree.hpp"
+#include <string>
+#include <unordered_set>
+#include <unordered_map>
 #include "../data_struct/Module.hpp"
 #include "../data_struct/SymmetryConstraint.hpp"
+#include "../data_struct/BStarTreeNode.hpp"
+#include "../data_struct/ASFBStarTree.hpp"
 #include "../utils/SA.hpp"
 
-/**
- * PlacementSolver class for solving the analog device placement problem
- * with symmetry constraints.
- * 
- * This class uses the HB*-tree representation and simulated annealing
- * to find an optimized placement solution.
- */
 class PlacementSolver {
 private:
-    // The HB*-tree representation of the placement
-    std::shared_ptr<HBStarTree> hbTree;
+    // Regular modules (not part of symmetry groups)
+    std::map<std::string, std::shared_ptr<Module>> regularModules;
     
-    // Modules in the placement
-    std::map<std::string, std::shared_ptr<Module>> modules;
-    
-    // Symmetry constraints
+    // Symmetry groups and their modules
     std::vector<std::shared_ptr<SymmetryGroup>> symmetryGroups;
+    std::map<std::string, std::shared_ptr<ASFBStarTree>> symmetryTrees;
+    
+    // B*-tree for regular modules
+    std::shared_ptr<BStarTreeNode> regularTree;
+    
+    // All modules (reference to both regular and symmetry modules)
+    std::map<std::string, std::shared_ptr<Module>> allModules;
+    
+    // Mapping from module name to its parent symmetry group
+    std::map<std::string, std::shared_ptr<SymmetryGroup>> moduleToGroup;
     
     // Simulated annealing parameters
     double initialTemperature;
@@ -44,16 +49,59 @@ private:
     double areaWeight;
     double wirelengthWeight;
     
-    // Random seed for reproducibility
+    // Random seed
     unsigned int randomSeed;
     
     // Statistics
     int totalArea;
+    int solutionWidth;
+    int solutionHeight;
+    
+    // Time limit in seconds
+    int timeLimit;
     
     /**
      * Creates an initial placement solution
      */
     void createInitialSolution();
+    
+    /**
+     * Packs all modules (regular and symmetry groups)
+     * using grid-based packing strategy
+     * @return True if packing succeeded
+     */
+    bool packSolution();
+    
+    /**
+     * Packs regular modules using B*-tree
+     * @param boundingRects Map of available spaces and their dimensions
+     * @return True if packing succeeded
+     */
+    bool packRegularModules(const std::vector<std::pair<int, int>>& availablePositions);
+    
+    /**
+     * Calculates total placement area
+     * @return Total area
+     */
+    int calculateTotalArea();
+    
+    /**
+     * Checks if there are any overlaps between modules
+     * @return True if there are overlaps
+     */
+    bool hasOverlaps() const;
+    
+    /**
+     * Validates symmetry constraints
+     * @return True if all symmetry constraints are valid
+     */
+    bool validateSymmetryConstraints() const;
+    
+    /**
+     * Initializes module grouping
+     * Identifies which modules belong to which symmetry groups
+     */
+    void initializeModuleGrouping();
     
 public:
     /**
@@ -113,6 +161,13 @@ public:
      * @param seed Random seed
      */
     void setRandomSeed(unsigned int seed);
+    
+    /**
+     * Sets time limit for SA in seconds
+     * 
+     * @param seconds Time limit in seconds
+     */
+    void setTimeLimit(int seconds);
     
     /**
      * Solves the placement problem using simulated annealing
