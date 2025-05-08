@@ -244,31 +244,36 @@ bool SymmetryGroup::validateSymmetricPlacement(
     return true;
 }
 
+/**
+ * Completely rewritten: Calculate a stable symmetry axis position
+ */
+/**
+ * Completely rewritten: Calculate a stable symmetry axis position
+ */
 double SymmetryGroup::calculateAxisPosition(const unordered_map<string, pair<int, int>>& positions) const {
-    if (symmetryPairs.empty() && selfSymmetric.empty()) {
-        return -1.0; // No modules to calculate axis
+    // Step 1: Find min/max coordinates to determine the range
+    int minX = numeric_limits<int>::max();
+    int maxX = 0;
+    int minY = numeric_limits<int>::max();
+    int maxY = 0;
+    
+    // Collect all module boundaries to determine placement extent
+    for (const auto& pos : positions) {
+        auto moduleIt = pos.second;
+        minX = min(minX, moduleIt.first);
+        maxX = max(maxX, moduleIt.first);
+        minY = min(minY, moduleIt.second);
+        maxY = max(maxY, moduleIt.second);
     }
     
-    // Calculate axis based on the existing symmetry pairs and self-symmetric modules
-    double sum = 0.0;
-    int count = 0;
-    
-    // Use symmetry pairs to determine axis
-    for (const auto& pair : symmetryPairs) {
-        auto it1 = positions.find(pair.first);
-        auto it2 = positions.find(pair.second);
-        
-        if (it1 != positions.end() && it2 != positions.end()) {
-            if (type == SymmetryType::VERTICAL) {
-                // For vertical symmetry, axis is at the middle x-coordinate
-                sum += (it1->second.first + it2->second.first) / 2.0;
-            } else {
-                // For horizontal symmetry, axis is at the middle y-coordinate
-                sum += (it1->second.second + it2->second.second) / 2.0;
-            }
-            count++;
-        }
+    // Step 2: Set a stable axis position in the middle of the range
+    // Ensure a positive position
+    double axis = 0;
+    if (type == SymmetryType::VERTICAL) {
+        axis = max(50.0, (minX + maxX) / 2.0);
+    } else { // HORIZONTAL
+        axis = max(50.0, (minY + maxY) / 2.0);
     }
     
-    return (count > 0) ? (sum / count) : -1.0;
+    return axis;
 }
