@@ -17,7 +17,10 @@ using namespace std;
  * Calculates the coordinates of all modules by packing the HB*-tree
  */
 bool HBStarTree::pack() {
-    if (!root) return false;
+    if (!root) {
+        std::cerr << "Cannot pack HBStarTree: root is null" << std::endl;
+        return false;
+    }
     
     // Reset contours
     horizontalContour->clear();
@@ -40,72 +43,38 @@ bool HBStarTree::pack() {
         if (asfTree) {
             // Pack the ASF-B*-tree to get initial module positions within the symmetry group
             if (!asfTree->pack()) {
+                std::cerr << "Failed to pack symmetry group: " << pair.first << std::endl;
                 return false; // Failed to pack a symmetry group
             }
         }
     }
     
-    // Pack the tree in pre-order (DFS)
-    stack<shared_ptr<HBStarTreeNode>> nodeStack;
-    nodeStack.push(root);
+    // IMPORTANT CHANGE: Use recursive packing for proper tree traversal
+    bool packSuccess = packSubtree(root);
     
+    if (!packSuccess) {
+        std::cerr << "Failed to pack the HB*-tree" << std::endl;
+        return false;
+    }
+    
+    // Calculate maximum coordinates
     int maxX = 0, maxY = 0;
     
-    while (!nodeStack.empty()) {
-        auto currentNode = nodeStack.top();
-        nodeStack.pop();
-        
-        if (!currentNode) continue;
-        
-        switch (currentNode->getType()) {
-            case HBNodeType::MODULE: {
-                // Pack a regular module
-                if (!packNode(currentNode)) {
-                    return false; // Failed to pack a module
-                }
-                
-                // Update maximum coordinates
-                const string& moduleName = currentNode->getModuleName();
-                auto moduleIt = modules.find(moduleName);
-                if (moduleIt != modules.end()) {
-                    auto module = moduleIt->second;
-                    maxX = max(maxX, module->getX() + module->getWidth());
-                    maxY = max(maxY, module->getY() + module->getHeight());
-                }
-                break;
+    for (const auto& pair : modules) {
+        const auto& module = pair.second;
+        maxX = max(maxX, module->getX() + module->getWidth());
+        maxY = max(maxY, module->getY() + module->getHeight());
+    }
+    
+    // For symmetry groups, check all modules in their ASF-B*-trees
+    for (const auto& pair : symmetryGroupNodes) {
+        auto asfTree = pair.second->getASFTree();
+        if (asfTree) {
+            for (const auto& modulePair : asfTree->getModules()) {
+                const auto& module = modulePair.second;
+                maxX = max(maxX, module->getX() + module->getWidth());
+                maxY = max(maxY, module->getY() + module->getHeight());
             }
-            case HBNodeType::HIERARCHY: {
-                // Pack a symmetry island
-                if (!packSymmetryIsland(currentNode)) {
-                    return false; // Failed to pack a symmetry island
-                }
-                
-                // Update maximum coordinates using the coordinates of the modules in the symmetry island
-                auto asfTree = currentNode->getASFTree();
-                if (asfTree) {
-                    for (const auto& modulePair : asfTree->getModules()) {
-                        const auto& module = modulePair.second;
-                        maxX = max(maxX, module->getX() + module->getWidth());
-                        maxY = max(maxY, module->getY() + module->getHeight());
-                    }
-                }
-                break;
-            }
-            case HBNodeType::CONTOUR: {
-                // Contour nodes don't need to be packed, but update the contour
-                int x1, y1, x2, y2;
-                currentNode->getContour(x1, y1, x2, y2);
-                horizontalContour->addSegment(x1, x2, y2);
-                break;
-            }
-        }
-        
-        // Add children to the stack in reverse order (for pre-order traversal)
-        if (currentNode->getRightChild()) {
-            nodeStack.push(currentNode->getRightChild());
-        }
-        if (currentNode->getLeftChild()) {
-            nodeStack.push(currentNode->getLeftChild());
         }
     }
     
@@ -116,29 +85,59 @@ bool HBStarTree::pack() {
     updateContourNodes();
     
     // Validate symmetry constraints for each symmetry group
+    bool allValid = true;
     for (const auto& symGroupPair : symmetryGroupNodes) {
         auto asfTree = symGroupPair.second->getASFTree();
         if (asfTree) {
-            // Validate symmetry constraints
-            if (!asfTree->validateSymmetryConstraints()) {
-                std::cerr << "Symmetry constraints violated for group: " 
-                          << symGroupPair.first << std::endl;
-                return false;
+            // Validate and fix symmetry constraints if needed
+            asfTree->enforceSymmetryConstraints();
+            
+            // Check if the symmetry constraints are still valid after fixing
+            if (!asfTree->checkSymmetryConstraints()) {
+                std::cerr << "Symmetry constraints still violated for group: " 
+                          << symGroupPair.first << " after fixing" << std::endl;
+                allValid = false;
             }
             
             // Check for symmetry island validity
             if (!asfTree->isSymmetryIslandValid()) {
                 std::cerr << "Invalid symmetry island for group: " 
                           << symGroupPair.first << std::endl;
-                return false;
+                allValid = false;
             }
         }
     }
     
-    // Check for overlaps
+    // Check for overlaps after the symmetry enforcement
     if (hasOverlap()) {
-        std::cerr << "Overlap detected in placement" << std::endl;
-        return false;
+        std::cerr << "Overlap detected in placement after packing" << std::endl;
+        allValid = false;
+    }
+    
+    if (!allValid) {
+        // Attempt emergency recovery if constraints violated
+        for (const auto& symGroupPair : symmetryGroupNodes) {
+            auto asfTree = symGroupPair.second->getASFTree();
+            if (asfTree && (!asfTree->checkSymmetryConstraints() || !asfTree->isSymmetryIslandValid())) {
+                std::cout << "Applying emergency recovery for group: " << symGroupPair.first << std::endl;
+                asfTree->emergencyRecovery();
+            }
+        }
+        
+        // Re-check after emergency recovery
+        bool recoverySuccessful = true;
+        for (const auto& symGroupPair : symmetryGroupNodes) {
+            auto asfTree = symGroupPair.second->getASFTree();
+            if (asfTree && (!asfTree->checkSymmetryConstraints() || !asfTree->isSymmetryIslandValid())) {
+                recoverySuccessful = false;
+                break;
+            }
+        }
+        
+        if (!recoverySuccessful) {
+            std::cerr << "Emergency recovery failed to fix all issues" << std::endl;
+            return false;
+        }
     }
     
     packed = true;
@@ -395,6 +394,9 @@ bool HBStarTree::packNode(shared_ptr<HBStarTreeNode> node) {
 /**
  * Pack a symmetry island
  */
+/**
+ * Pack a symmetry island
+ */
 bool HBStarTree::packSymmetryIsland(shared_ptr<HBStarTreeNode> hierarchyNode) {
     if (!hierarchyNode || hierarchyNode->getType() != HBNodeType::HIERARCHY) return false;
     
@@ -508,12 +510,10 @@ bool HBStarTree::packSymmetryIsland(shared_ptr<HBStarTreeNode> hierarchyNode) {
         module->setPosition(module->getX() + islandOffsetX, module->getY() + islandOffsetY);
     }
     
-    // Update horizontal contour
-    // For simplicity, approximate the rectilinear shape with its bounding box
-    horizontalContour->addSegment(x, x + width, y + (symMaxY - minY));
+    // IMPORTANT CHANGE: Do not add the bounding box as a simplification
+    // Only add detailed contour segments from the symmetry island
     
-    // More accurate approach: get all horizontal contour segments of the symmetry island
-    // and add them to the horizontal contour
+    // Add the horizontal contour segments directly
     auto segments = asfTree->getContours().first->getSegments();
     for (const auto& segment : segments) {
         horizontalContour->addSegment(
@@ -523,8 +523,7 @@ bool HBStarTree::packSymmetryIsland(shared_ptr<HBStarTreeNode> hierarchyNode) {
         );
     }
     
-    // Update vertical contour
-    // Get all vertical contour segments and add them to the vertical contour
+    // Add the vertical contour segments
     const auto &vSegs = asfTree->getContours().second->getSegments();
     for (const auto &s : vSegs) {
         verticalContour->addSegment(
@@ -533,6 +532,9 @@ bool HBStarTree::packSymmetryIsland(shared_ptr<HBStarTreeNode> hierarchyNode) {
             s.height + islandOffsetX // x-coord lives in `height` field
         );
     }
+    
+    // After moving the island, re-validate symmetry
+    asfTree->enforceSymmetryConstraints();
     
     return true;
 }
@@ -581,6 +583,9 @@ bool HBStarTree::updateContourForModule(const shared_ptr<Module>& module) {
 /**
  * Incrementally updates the packing after a perturbation
  */
+/**
+ * Incrementally updates the packing after a perturbation
+ */
 bool HBStarTree::incrementalPack() {
     if (!root) return false;
     
@@ -618,9 +623,27 @@ bool HBStarTree::incrementalPack() {
         rootsToRepack.insert(highest);
     }
     
+    // Repack each affected symmetry group first
+    for (const auto& groupName : affectedModules) {
+        auto symGroupIt = symmetryGroupNodes.find(groupName);
+        if (symGroupIt != symmetryGroupNodes.end()) {
+            auto asfTree = symGroupIt->second->getASFTree();
+            if (asfTree) {
+                if (!asfTree->pack()) {
+                    return false; // Failed to pack the symmetry group
+                }
+                
+                // Re-enforce symmetry constraints
+                asfTree->enforceSymmetryConstraints();
+            }
+        }
+    }
+    
     // Repack each affected subtree
     for (auto node : rootsToRepack) {
-        packSubtree(node);
+        if (!packSubtree(node)) {
+            return false; // Failed to pack subtree
+        }
     }
     
     // Update maximum coordinates
@@ -630,18 +653,42 @@ bool HBStarTree::incrementalPack() {
         maxY = max(maxY, module->getY() + module->getHeight());
     }
     
+    // For symmetry groups, check all modules in their ASF-B*-trees
+    for (const auto& pair : symmetryGroupNodes) {
+        auto asfTree = pair.second->getASFTree();
+        if (asfTree) {
+            for (const auto& modulePair : asfTree->getModules()) {
+                const auto& module = modulePair.second;
+                maxX = max(maxX, module->getX() + module->getWidth());
+                maxY = max(maxY, module->getY() + module->getHeight());
+            }
+        }
+    }
+    
     // Calculate total area
     totalArea = maxX * maxY;
     
     // Update contour nodes
     updateContourNodes();
     
+    // Re-validate symmetry constraints for all affected symmetry groups
+    for (const auto& groupName : affectedModules) {
+        auto symGroupIt = symmetryGroupNodes.find(groupName);
+        if (symGroupIt != symmetryGroupNodes.end()) {
+            auto asfTree = symGroupIt->second->getASFTree();
+            if (asfTree) {
+                // Enforce symmetry constraints
+                asfTree->enforceSymmetryConstraints();
+            }
+        }
+    }
+    
     // Clear affected cache
     clearAffectedCache();
     
     packed = true;
     
-    return true;
+    return !hasOverlap();
 }
 
 /**

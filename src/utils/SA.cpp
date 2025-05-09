@@ -223,13 +223,19 @@ bool SimulatedAnnealing::packRegularModules(int startX, int startY) {
 }
 
 int SimulatedAnnealing::calculateArea() {
+    // Make sure solution is packed before calculating area
+    if (!packSolution()) {
+        std::cerr << "Warning: Packing failed during area calculation" << std::endl;
+        return std::numeric_limits<int>::max();
+    }
+    
     // Find the bounding rectangle of all modules
     int minX = std::numeric_limits<int>::max();
     int minY = std::numeric_limits<int>::max();
     int maxX = 0;
     int maxY = 0;
     
-    // Check all modules
+    // Check regular modules
     for (const auto& pair : allModules) {
         const auto& module = pair.second;
         
@@ -239,9 +245,34 @@ int SimulatedAnnealing::calculateArea() {
         maxY = std::max(maxY, module->getY() + module->getHeight());
     }
     
+    // Also check modules in symmetry trees
+    for (const auto& pair : symmetryTrees) {
+        for (const auto& modulePair : pair.second->getModules()) {
+            const auto& module = modulePair.second;
+            
+            minX = std::min(minX, module->getX());
+            minY = std::min(minY, module->getY());
+            maxX = std::max(maxX, module->getX() + module->getWidth());
+            maxY = std::max(maxY, module->getY() + module->getHeight());
+        }
+    }
+    
+    // Check for invalid dimensions
+    if (maxX <= minX || maxY <= minY) {
+        std::cerr << "Warning: Invalid dimensions detected in area calculation" << std::endl;
+        return std::numeric_limits<int>::max();
+    }
+    
+    // Check for unreasonably large dimensions
+    if (maxX > 10000000 || maxY > 10000000) {
+        std::cerr << "Warning: Unreasonably large dimensions detected" << std::endl;
+        return std::numeric_limits<int>::max();
+    }
+    
     // Calculate area
     return (maxX - minX) * (maxY - minY);
 }
+
 
 bool SimulatedAnnealing::hasOverlaps() const {
     // Check for overlaps between all pairs of modules
@@ -268,94 +299,26 @@ bool SimulatedAnnealing::hasOverlaps() const {
 }
 
 bool SimulatedAnnealing::validateSymmetryConstraints() const {
+    // Check symmetry constraints for all symmetry groups
     for (const auto& pair : symmetryTrees) {
         auto asfTree = pair.second;
-        auto symGroup = asfTree->getSymmetryGroup();
+        if (!asfTree) continue;
         
-        // Check each symmetry pair
-        for (const auto& symPair : symGroup->getSymmetryPairs()) {
-            auto mod1 = asfTree->getModules().find(symPair.first);
-            auto mod2 = asfTree->getModules().find(symPair.second);
-            
-            if (mod1 == asfTree->getModules().end() || mod2 == asfTree->getModules().end()) {
-                continue;
-            }
-            
-            // Check symmetry constraints
-            if (symGroup->getType() == SymmetryType::VERTICAL) {
-                double axis = symGroup->getAxisPosition();
-                int center1X = mod1->second->getX() + mod1->second->getWidth()/2;
-                int center2X = mod2->second->getX() + mod2->second->getWidth()/2;
-                
-                // Check if centers are symmetric about the axis
-                if (std::abs((center1X + center2X)/2.0 - axis) > 1.0) {
-                    std::cerr << "Vertical symmetry violation for pair: " 
-                              << symPair.first << " and " << symPair.second 
-                              << " in group " << symGroup->getName() << std::endl;
-                    return false;
-                }
-                
-                // Y coordinates should be equal
-                if (mod1->second->getY() != mod2->second->getY()) {
-                    std::cerr << "Y-coordinate mismatch for pair: " 
-                              << symPair.first << " and " << symPair.second
-                              << " in group " << symGroup->getName() << std::endl;
-                    return false;
-                }
-            } else { // HORIZONTAL
-                double axis = symGroup->getAxisPosition();
-                int center1Y = mod1->second->getY() + mod1->second->getHeight()/2;
-                int center2Y = mod2->second->getY() + mod2->second->getHeight()/2;
-                
-                // Check if centers are symmetric about the axis
-                if (std::abs((center1Y + center2Y)/2.0 - axis) > 1.0) {
-                    std::cerr << "Horizontal symmetry violation for pair: " 
-                              << symPair.first << " and " << symPair.second
-                              << " in group " << symGroup->getName() << std::endl;
-                    return false;
-                }
-                
-                // X coordinates should be equal
-                if (mod1->second->getX() != mod2->second->getX()) {
-                    std::cerr << "X-coordinate mismatch for pair: " 
-                              << symPair.first << " and " << symPair.second
-                              << " in group " << symGroup->getName() << std::endl;
-                    return false;
-                }
-            }
-        }
+        // Use checkSymmetryConstraints (not enforceSymmetryConstraints) to avoid modifying anything
+        bool isValid = true;
         
-        // Check self-symmetric modules
-        for (const auto& modName : symGroup->getSelfSymmetric()) {
-            auto mod = asfTree->getModules().find(modName);
-            if (mod == asfTree->getModules().end()) {
-                continue;
-            }
-            
-            // Check symmetry constraint
-            if (symGroup->getType() == SymmetryType::VERTICAL) {
-                double axis = symGroup->getAxisPosition();
-                int centerX = mod->second->getX() + mod->second->getWidth()/2;
-                
-                // Center should be on the axis
-                if (std::abs(centerX - axis) > 1.0) {
-                    std::cerr << "Self-symmetric module " << modName 
-                              << " not centered on vertical axis in group " 
-                              << symGroup->getName() << std::endl;
-                    return false;
-                }
-            } else { // HORIZONTAL
-                double axis = symGroup->getAxisPosition();
-                int centerY = mod->second->getY() + mod->second->getHeight()/2;
-                
-                // Center should be on the axis
-                if (std::abs(centerY - axis) > 1.0) {
-                    std::cerr << "Self-symmetric module " << modName 
-                              << " not centered on horizontal axis in group " 
-                              << symGroup->getName() << std::endl;
-                    return false;
-                }
-            }
+        // First, ensure we're not modifying but just checking
+        bool savedMode = asfTree->isValidationOnly;
+        const_cast<ASFBStarTree*>(asfTree.get())->isValidationOnly = true;
+        
+        isValid = asfTree->validateSymmetryConstraints();
+        
+        // Restore original mode
+        const_cast<ASFBStarTree*>(asfTree.get())->isValidationOnly = savedMode;
+        
+        if (!isValid) {
+            std::cerr << "Symmetry constraints violated for group: " << pair.first << std::endl;
+            return false;
         }
     }
     
@@ -704,6 +667,9 @@ bool SimulatedAnnealing::run() {
             if (!tree->pack()) {
                 std::cerr << "Failed to pack symmetry group: " << pair.first << std::endl;
             }
+            
+            // IMPORTANT: Enforce symmetry constraints after packing
+            tree->enforceSymmetryConstraints();
         }
         
         if (!packSolution() || hasOverlaps()) {
@@ -744,53 +710,62 @@ bool SimulatedAnnealing::run() {
             // Pack the solution
             bool packSuccess = packSolution();
             
-            // Validate solution - strict validation on symmetry and overlaps
-            bool isValid = packSuccess && !hasOverlaps() && validateSymmetryConstraints();
-            
-            if (isValid) {
-                // Calculate new cost
-                int newArea = calculateArea();
-                int costDiff = newArea - currentArea;
+            // IMPORTANT CHANGE: Enforce symmetry BEFORE checking validity
+            if (packSuccess) {
+                // Enforce symmetry constraints for all symmetry groups
+                for (auto& pair : symmetryTrees) {
+                    pair.second->enforceSymmetryConstraints();
+                }
                 
-                // Accept or reject with stronger bias towards improvement
-                if (costDiff < 0 || (acceptMove(costDiff, temperature) && newArea < currentArea * 1.2)) {
-                    // Accept the perturbation with stricter criteria
-                    currentArea = newArea;
-                    acceptedMoves++;
-                    acceptedInPass++;
+                // Now check if the solution is valid with enforced symmetry
+                bool isValid = !hasOverlaps() && validateSymmetryConstraints();
+                
+                if (isValid) {
+                    // Calculate new cost
+                    int newArea = calculateArea();
+                    int costDiff = newArea - currentArea;
                     
-                    // Update best solution if improved
-                    if (newArea < bestArea) {
-                        bestArea = newArea;
-                        saveBestSolution();
-                        noImprovementCount = 0;
+                    // Accept or reject with stronger bias towards improvement
+                    if (costDiff < 0 || (acceptMove(costDiff, temperature) && newArea < currentArea * 1.2)) {
+                        // Accept the perturbation with stricter criteria
+                        currentArea = newArea;
+                        acceptedMoves++;
+                        acceptedInPass++;
                         
-                        std::cout << "New best area found: " << bestArea << std::endl;
+                        // Update best solution if improved
+                        if (newArea < bestArea) {
+                            bestArea = newArea;
+                            saveBestSolution();
+                            noImprovementCount = 0;
+                            
+                            std::cout << "New best area found: " << bestArea << std::endl;
+                        } else {
+                            noImprovementCount++;
+                        }
                     } else {
+                        // Reject the perturbation
+                        revertPerturbation();
+                        rejectedMoves++;
                         noImprovementCount++;
                     }
                 } else {
-                    // Reject the perturbation
+                    // Invalid solution, revert the perturbation and try to fix
                     revertPerturbation();
-                    rejectedMoves++;
-                    noImprovementCount++;
-                }
-            } else {
-                // Invalid solution, revert the perturbation and try to fix
-                revertPerturbation();
-                
-                // For debugging
-                if (packSuccess) {
+                    
+                    // For debugging
                     if (hasOverlaps()) {
                         std::cout << "Placement has overlapping modules" << std::endl;
                     }
                     if (!validateSymmetryConstraints()) {
                         std::cout << "Symmetry constraints violated" << std::endl;
                     }
-                } else {
-                    std::cout << "Packing failed" << std::endl;
+                    
+                    rejectedMoves++;
                 }
-                
+            } else {
+                // Packing failed, revert the perturbation
+                revertPerturbation();
+                std::cout << "Packing failed" << std::endl;
                 rejectedMoves++;
             }
             
@@ -849,6 +824,11 @@ bool SimulatedAnnealing::run() {
     // Always restore the best solution at the end
     restoreBestSolution();
     
+    // IMPORTANT: Enforce symmetry constraints on the final solution
+    for (auto& pair : symmetryTrees) {
+        pair.second->enforceSymmetryConstraints();
+    }
+    
     // Final validation
     bool finalValid = packSolution() && !hasOverlaps() && validateSymmetryConstraints();
     
@@ -861,8 +841,24 @@ bool SimulatedAnnealing::run() {
             if (!tree->pack()) {
                 std::cerr << "Failed to pack symmetry group: " << pair.first << std::endl;
             }
+            
+            // Enforce symmetry constraints
+            tree->enforceSymmetryConstraints();
         }
         
+        finalValid = packSolution() && !hasOverlaps() && validateSymmetryConstraints();
+    }
+    
+    // If still invalid, try emergency recovery as a last resort
+    if (!finalValid) {
+        std::cerr << "Warning: Final solution still invalid, attempting emergency recovery..." << std::endl;
+        
+        for (auto& pair : symmetryTrees) {
+            auto tree = pair.second;
+            tree->emergencyRecovery();
+        }
+        
+        // Final check after emergency recovery
         finalValid = packSolution() && !hasOverlaps() && validateSymmetryConstraints();
     }
     

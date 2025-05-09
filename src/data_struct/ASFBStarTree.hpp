@@ -36,8 +36,6 @@ private:
     
     // Symmetry axis position
     double symmetryAxisPosition;
-
-    bool isValidationOnly;
     
     // Internal helper methods
     bool isOnBoundary(const string& moduleName) const;
@@ -52,6 +50,8 @@ private:
     void calculateSymmetricModulePositions();
     
 public:
+    bool isValidationOnly;
+    
     /**
      * Constructor
      * 
@@ -100,10 +100,18 @@ public:
     void fixOverlaps();
 
     /**
-     * Enforce symmetry constraints by adjusting module positions
+     * Checks symmetry constraints without modifying any module positions
+     * 
+     * @return True if all symmetry constraints are valid, false otherwise
+     */
+    bool checkSymmetryConstraints() const;
+
+    /**
+     * Enforces symmetry constraints by adjusting module positions
      * This is a dedicated function for fixing symmetry violations
      */
     void enforceSymmetryConstraints();
+
 
     /**
      * Emergency recovery function that forces a valid placement

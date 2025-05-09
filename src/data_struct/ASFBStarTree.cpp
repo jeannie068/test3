@@ -205,9 +205,6 @@ void ASFBStarTree::packNode(const shared_ptr<BStarTreeNode>& node) {
 /**
  * Calculate the positions of symmetric modules
  */
-/**
- * Calculate the positions of symmetric modules
- */
 void ASFBStarTree::calculateSymmetricModulePositions() {
     // Step 1: Force all modules to have positive coordinates
     // Shift any modules with negative coordinates
@@ -240,8 +237,10 @@ void ASFBStarTree::calculateSymmetricModulePositions() {
     
     // Step 2: Apply consistent symmetry positioning for all pairs
     SymmetryType symType = symmetryGroup->getType();
-    // Reduced buffer to bring modules closer together
-    const int BUFFER = 5; // Reduced from 20 to improve connectivity
+    
+    // IMPORTANT CHANGE: Reduce buffer to ensure true connectivity
+    // Use 0 buffer to ensure modules touch each other
+    const int BUFFER = 0; // Reduced from 5 to improve connectivity
     
     // Track previous module positions to maintain connectivity
     int prevX = 0;
@@ -289,13 +288,13 @@ void ASFBStarTree::calculateSymmetricModulePositions() {
                         yPos = std::max(yPos, modBottom);
                     }
                 }
-                // Add small gap for clarity
-                yPos += 2;
+                // No gap for true connectivity
+                yPos += 0;
             }
             
-            // First module on left side of the axis with a buffer
+            // First module on left side of the axis with no buffer
             int mod1X = static_cast<int>(symmetryAxisPosition) - width1 - BUFFER;
-            // Second module on right side of the axis with a buffer
+            // Second module on right side of the axis with no buffer
             int mod2X = static_cast<int>(symmetryAxisPosition) + BUFFER;
             
             // Set positions with symmetry around the axis
@@ -333,13 +332,13 @@ void ASFBStarTree::calculateSymmetricModulePositions() {
                         xPos = std::max(xPos, modRight);
                     }
                 }
-                // Add small gap for clarity
-                xPos += 2;
+                // No gap for true connectivity
+                xPos += 0;
             }
             
-            // First module below the axis with a buffer
+            // First module below the axis with no buffer
             int mod1Y = static_cast<int>(symmetryAxisPosition) - height1 - BUFFER;
-            // Second module above the axis with a buffer
+            // Second module above the axis with no buffer
             int mod2Y = static_cast<int>(symmetryAxisPosition) + BUFFER;
             
             // Set positions with symmetry around the axis
@@ -371,11 +370,11 @@ void ASFBStarTree::calculateSymmetricModulePositions() {
                 selfSymYPos = std::max(selfSymYPos, mod->getY() + mod->getHeight());
             }
         }
-        // Add gap between pairs and self-symmetric modules
+        // No gap between pairs and self-symmetric modules
         if (symType == SymmetryType::VERTICAL) {
-            selfSymYPos += 5; // Place below symmetry pairs
+            selfSymYPos += 0; // No gap
         } else {
-            selfSymXPos += 5; // Place to the right of symmetry pairs
+            selfSymXPos += 0; // No gap
         }
     }
     
@@ -393,7 +392,7 @@ void ASFBStarTree::calculateSymmetricModulePositions() {
             module->setPosition(x, selfSymYPos);
             
             // Update for next self-symmetric module
-            selfSymYPos += module->getHeight() + 2;
+            selfSymYPos += module->getHeight() + 0; // No gap
         } else { // HORIZONTAL
             int height = module->getHeight();
             int y = static_cast<int>(symmetryAxisPosition) - height / 2;
@@ -401,7 +400,7 @@ void ASFBStarTree::calculateSymmetricModulePositions() {
             module->setPosition(selfSymXPos, y);
             
             // Update for next self-symmetric module
-            selfSymXPos += module->getWidth() + 2;
+            selfSymXPos += module->getWidth() + 0; // No gap
         }
         
         // Mark as processed
@@ -428,10 +427,7 @@ void ASFBStarTree::calculateSymmetricModulePositions() {
 
 /**
  * Calculates the coordinates of all modules in the symmetry group
- * by packing the ASF-B*-tree
- */
-/**
- * Modified pack() method that includes symmetry enforcement
+ * by packing the ASF-B*-tree, includes symmetry enforcement
  */
 bool ASFBStarTree::pack() {
     if (!root) {
@@ -553,39 +549,36 @@ bool ASFBStarTree::pack() {
  * when normal positioning attempts fail
  */
 void ASFBStarTree::emergencyRecovery() {
-    // Create a simple linear arrangement that guarantees symmetry and connectivity
-    SymmetryType symType = symmetryGroup->getType();
-    std::vector<std::pair<std::string, std::string>> pairs = symmetryGroup->getSymmetryPairs();
-    std::vector<std::string> selfSyms = symmetryGroup->getSelfSymmetric();
+    // Start with a clean position with more buffer space
+    int startX = 50;  // Increased from 10
+    int startY = 50;  // Increased from 10
     
-    // Start with a clean position
-    int startX = 10;
-    int startY = 10;
-    
-    // Ensure symmetry axis is properly positioned
-    if (symType == SymmetryType::VERTICAL) {
+    // Ensure symmetry axis is properly positioned with more margin
+    if (symmetryGroup->getType() == SymmetryType::VERTICAL) {
         // Find the maximum width of any module
         int maxWidth = 0;
         for (const auto& pair : modules) {
             maxWidth = std::max(maxWidth, pair.second->getWidth());
         }
-        symmetryAxisPosition = startX + maxWidth * 3; // Place axis with enough room for modules
+        // Use a more generous buffer
+        symmetryAxisPosition = startX + maxWidth * 2.5; // Increased from *3
     } else {
         // Find the maximum height of any module
         int maxHeight = 0;
         for (const auto& pair : modules) {
             maxHeight = std::max(maxHeight, pair.second->getHeight());
         }
-        symmetryAxisPosition = startY + maxHeight * 3; // Place axis with enough room for modules
+        // Use a more generous buffer
+        symmetryAxisPosition = startY + maxHeight * 2.5; // Increased from *3
     }
     
     std::cout << "Emergency recovery: using symmetry axis at " << symmetryAxisPosition << std::endl;
     
-    // Position symmetric pairs
+    // Position symmetric pairs - place them directly against the axis with no gap
     int currentX = startX;
     int currentY = startY;
     
-    for (const auto& pair : pairs) {
+    for (const auto& pair : symmetryGroup->getSymmetryPairs()) {
         auto mod1It = modules.find(pair.first);
         auto mod2It = modules.find(pair.second);
         
@@ -597,56 +590,75 @@ void ASFBStarTree::emergencyRecovery() {
         // Ensure same rotation status
         mod2->setRotation(mod1->getRotated());
         
-        if (symType == SymmetryType::VERTICAL) {
-            // For vertical symmetry: place on opposite sides of axis
-            int mod1X = static_cast<int>(symmetryAxisPosition) - mod1->getWidth() - 10;
-            int mod2X = static_cast<int>(symmetryAxisPosition) + 10;
+        if (symmetryGroup->getType() == SymmetryType::VERTICAL) {
+            // Place modules directly against vertical axis with no gap
+            int mod1X = static_cast<int>(symmetryAxisPosition) - mod1->getWidth();
+            int mod2X = static_cast<int>(symmetryAxisPosition);
             
             mod1->setPosition(mod1X, currentY);
             mod2->setPosition(mod2X, currentY);
             
-            // Move down for the next pair - ensure all modules touch
+            // Move down ensuring modules touch exactly
             currentY += std::max(mod1->getHeight(), mod2->getHeight());
         } else {
-            // For horizontal symmetry: place above/below axis
-            int mod1Y = static_cast<int>(symmetryAxisPosition) - mod1->getHeight() - 10;
-            int mod2Y = static_cast<int>(symmetryAxisPosition) + 10;
+            // Place modules directly against horizontal axis with no gap
+            int mod1Y = static_cast<int>(symmetryAxisPosition) - mod1->getHeight();
+            int mod2Y = static_cast<int>(symmetryAxisPosition);
             
             mod1->setPosition(currentX, mod1Y);
             mod2->setPosition(currentX, mod2Y);
             
-            // Move right for the next pair - ensure all modules touch
+            // Move right ensuring modules touch exactly
             currentX += std::max(mod1->getWidth(), mod2->getWidth());
         }
     }
     
-    // Position self-symmetric modules
-    for (const auto& name : selfSyms) {
+    // Position self-symmetric modules - center them exactly on the axis
+    for (const auto& name : selfSymmetricModules) {
         auto moduleIt = modules.find(name);
         if (moduleIt == modules.end()) continue;
         
         auto module = moduleIt->second;
         
-        if (symType == SymmetryType::VERTICAL) {
-            // Center on vertical axis
+        if (symmetryGroup->getType() == SymmetryType::VERTICAL) {
+            // Center exactly on vertical axis
             int x = static_cast<int>(symmetryAxisPosition) - module->getWidth() / 2;
             module->setPosition(x, currentY);
             
-            // Move down for the next module
+            // Move down with no gap
             currentY += module->getHeight();
         } else {
-            // Center on horizontal axis
+            // Center exactly on horizontal axis
             int y = static_cast<int>(symmetryAxisPosition) - module->getHeight() / 2;
             module->setPosition(currentX, y);
             
-            // Move right for the next module
+            // Move right with no gap
             currentX += module->getWidth();
         }
+    }
+    
+    // Final verification to ensure connectivity and no overlaps
+    bool connected = verifyConnectivity();
+    bool noOverlaps = !checkForOverlaps();
+    
+    if (!connected) {
+        std::cout << "Emergency recovery: modules still not connected, forcing tighter packing" << std::endl;
+        forceConnectivity();
+    }
+    
+    if (!noOverlaps) {
+        std::cout << "Emergency recovery: overlaps detected, applying overlap fix" << std::endl;
+        fixOverlaps();
     }
     
     std::cout << "Emergency recovery completed" << std::endl;
 }
 
+
+/**
+ * Validates that all symmetry constraints are satisfied
+ * This enhanced version will correct position violations when possible
+ */
 /**
  * Validates that all symmetry constraints are satisfied
  * This enhanced version will correct position violations when possible
@@ -880,6 +892,24 @@ void ASFBStarTree::enforceSymmetryConstraints() {
     // Restore previous validation mode
     isValidationOnly = savedMode;
 }
+
+/**
+ * Checks symmetry constraints without modifying any module positions
+ */
+bool ASFBStarTree::checkSymmetryConstraints() const {
+    // Temporarily enable validation-only mode
+    bool savedMode = isValidationOnly;
+    const_cast<ASFBStarTree*>(this)->isValidationOnly = true;
+    
+    // Call validation function which will now only check violations
+    bool result = validateSymmetryConstraints();
+    
+    // Restore previous validation mode
+    const_cast<ASFBStarTree*>(this)->isValidationOnly = savedMode;
+    
+    return result;
+}
+
 
 /**
  * Checks if a module is on the correct branch according to Property 1
@@ -1216,6 +1246,9 @@ pair<shared_ptr<Contour>, shared_ptr<Contour>> ASFBStarTree::getContours() const
 /**
  * Rotates a module in the symmetry group
  */
+/**
+ * Rotates a module in the symmetry group
+ */
 bool ASFBStarTree::rotateModule(const string& moduleName) {
     auto it = modules.find(moduleName);
     if (it == modules.end()) return false;
@@ -1227,17 +1260,26 @@ bool ASFBStarTree::rotateModule(const string& moduleName) {
     auto selfIt = find(selfSymmetricModules.begin(), selfSymmetricModules.end(), moduleName);
     
     if (pairIt != symmetricPairMap.end()) {
-        // For symmetry pairs, rotate both modules
-        auto pairModule = modules[pairIt->second];
-        if (pairModule) {
-            pairModule->rotate();
+        // For symmetry pairs, rotate both modules SIMULTANEOUSLY
+        auto pairModuleName = pairIt->second;
+        auto pairIt = modules.find(pairModuleName);
+        
+        if (pairIt != modules.end()) {
+            // First rotate the module itself
+            module->rotate();
+            
+            // Then immediately rotate its symmetric partner to match
+            pairIt->second->setRotation(module->getRotated());
+            
+            return true;
         }
     } else if (selfIt != selfSymmetricModules.end()) {
-        // For self-symmetric modules, update the shape of its representative
-        // This is a simplification - in reality, more complex handling might be needed
+        // For self-symmetric modules, just rotate
+        module->rotate();
+        return true;
     }
     
-    // Rotate the module
+    // Default case: just rotate the module
     module->rotate();
     
     return true;
