@@ -36,13 +36,14 @@ private:
     
     // Symmetry axis position
     double symmetryAxisPosition;
+
+    bool isValidationOnly;
     
     // Internal helper methods
     bool isOnBoundary(const string& moduleName) const;
     bool canMoveNode(const shared_ptr<BStarTreeNode>& node, 
                      const shared_ptr<BStarTreeNode>& newParent, 
                      bool asLeftChild) const;
-    void updateRepresentatives();
     
     // Packing helpers
     void initializeContours();
@@ -75,6 +76,40 @@ public:
      * @return True if packing was successful, false otherwise
      */
     bool pack();
+
+    /**
+     * Helper function to verify connectivity between all modules
+     * @return true if all modules are connected, false otherwise
+     */
+    bool verifyConnectivity();
+
+    /**
+     * Force connectivity between all modules if not already connected
+     */
+    void forceConnectivity();
+
+    /**
+     * Check if there are any module overlaps
+     * @return true if overlaps exist, false otherwise
+     */
+    bool checkForOverlaps();
+
+    /**
+     * Fix overlaps by shifting modules
+     */
+    void fixOverlaps();
+
+    /**
+     * Enforce symmetry constraints by adjusting module positions
+     * This is a dedicated function for fixing symmetry violations
+     */
+    void enforceSymmetryConstraints();
+
+    /**
+     * Emergency recovery function that forces a valid placement
+     * when normal positioning attempts fail
+     */
+    void emergencyRecovery();
     
     /**
      * Checks if the tree satisfies the symmetric-feasible condition
