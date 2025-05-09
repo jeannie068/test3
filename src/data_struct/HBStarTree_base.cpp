@@ -7,6 +7,7 @@
 
 #include "HBStarTree.hpp"
 #include <algorithm>
+#include <random>
 #include <queue>
 #include <iostream>
 #include <limits>
@@ -288,6 +289,27 @@ shared_ptr<HBStarTreeNode> HBStarTree::getSymmetryGroupNode(const string& symmet
     auto it = symmetryGroupNodes.find(symmetryGroupName);
     if (it == symmetryGroupNodes.end()) return nullptr;
     
+    return it->second;
+}
+
+/**
+ * Gets all module nodes in the tree
+ */
+const map<string, shared_ptr<HBStarTreeNode>>& HBStarTree::getModuleNodes() const {
+    return moduleNodes;
+}
+
+/**
+ * Gets a random node from the tree
+ */
+shared_ptr<HBStarTreeNode> HBStarTree::randomNode(std::mt19937& rng) {
+    auto& nodes = moduleNodes;
+    if (nodes.empty()) return nullptr;
+    
+    std::uniform_int_distribution<int> dist(0, nodes.size() - 1);
+    int index = dist(rng);
+    auto it = nodes.begin();
+    std::advance(it, index);
     return it->second;
 }
 

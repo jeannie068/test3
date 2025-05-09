@@ -2,8 +2,6 @@
 #include <iostream>
 #include <algorithm>
 
-
-
 // Constructors
 Module::Module(const std::string& name, int width, int height)
     : name(name), width(width), height(height), x(0), y(0), isRotated(false) {
@@ -15,14 +13,29 @@ Module::Module(const Module& other)
 }
 
 bool Module::overlaps(const Module& other) const {
-    // Check if two modules overlap
+    // First, check if we're comparing a module with itself (by pointer)
+    if (this == &other) {
+        return false; // A module can't overlap with itself
+    }
+    
+    // Next, check if we're comparing a module with the same name
+    if (name == other.name) {
+        return false; // Modules with the same name are considered the same module
+    }
+    
+    // Now check for actual geometric overlap
+    // No horizontal overlap if one is to the right of the other
     if (x + getWidth() <= other.x || other.x + other.getWidth() <= x) {
-        return false; // No horizontal overlap
+        return false;
     }
+    
+    // No vertical overlap if one is above the other
     if (y + getHeight() <= other.y || other.y + other.getHeight() <= y) {
-        return false; // No vertical overlap
+        return false;
     }
-    return true; // There is overlap
+    
+    // If we got here, there is overlap
+    return true;
 }
 
 // Getters

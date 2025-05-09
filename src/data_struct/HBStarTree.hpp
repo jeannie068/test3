@@ -18,6 +18,7 @@
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
+#include <random>
 
 #include "HBStarTreeNode.hpp"
 #include "ASFBStarTree.hpp"
@@ -202,6 +203,13 @@ public:
      * @return Module node with the given name, or nullptr if not found
      */
     shared_ptr<HBStarTreeNode> getModuleNode(const string& moduleName) const;
+
+    /**
+     * Gets all module nodes in the tree
+     * 
+     * @return Map of module names to nodes
+     */
+    const map<string, shared_ptr<HBStarTreeNode>>& getModuleNodes() const;
     
     /**
      * Gets the symmetry group node with the given name
@@ -231,6 +239,14 @@ public:
      * @param node The affected node
      */
     void markNodeAffected(shared_ptr<HBStarTreeNode> node);
+
+    /**
+     * Gets a random node from the tree
+     * 
+     * @param rng Random number generator
+     * @return Random node from the tree, or nullptr if empty
+     */
+    shared_ptr<HBStarTreeNode> randomNode(std::mt19937& rng);
     
     /**
      * Creates a deep copy of this HB*-tree

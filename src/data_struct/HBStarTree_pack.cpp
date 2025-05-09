@@ -150,20 +150,23 @@ bool HBStarTree::pack() {
  * Checks if the placement has any module overlaps
  */
 bool HBStarTree::hasOverlap() const {
-    // Collect all modules including those in symmetry groups
-    vector<shared_ptr<Module>> allModules;
+    // Check all pairs of modules for overlap
+    std::vector<std::shared_ptr<Module>> allModules;
     
-    // Add regular modules
+    // First, collect all modules (both regular and from symmetry groups)
     for (const auto& pair : modules) {
         allModules.push_back(pair.second);
     }
     
-    // Add modules from symmetry groups
-    for (const auto& symGroupPair : symmetryGroupNodes) {
-        auto asfTree = symGroupPair.second->getASFTree();
-        if (asfTree) {
-            for (const auto& modulePair : asfTree->getModules()) {
-                allModules.push_back(modulePair.second);
+    // Also add modules from symmetry groups
+    for (const auto& pair : symmetryGroupNodes) {
+        const auto& node = pair.second;
+        if (node && node->getType() == HBNodeType::HIERARCHY) {
+            auto asfTree = node->getASFTree();
+            if (asfTree) {
+                for (const auto& modPair : asfTree->getModules()) {
+                    allModules.push_back(modPair.second);
+                }
             }
         }
     }
@@ -175,10 +178,17 @@ bool HBStarTree::hasOverlap() const {
         for (size_t j = i + 1; j < allModules.size(); ++j) {
             const auto& module2 = allModules[j];
             
-            // Check if modules overlap
+            // Skip if comparing a module with itself or comparing modules with the same name
+            if (module1 == module2 || module1->getName() == module2->getName()) {
+                continue;
+            }
+            
             if (module1->overlaps(*module2)) {
                 std::cerr << "Overlap detected between modules: " 
-                          << module1->getName() << " and " << module2->getName() << std::endl;
+                          << module1->getName() << " (" << module1->getX() << "," << module1->getY() 
+                          << "," << module1->getWidth() << "," << module1->getHeight() << ") and " 
+                          << module2->getName() << " (" << module2->getX() << "," << module2->getY()
+                          << "," << module2->getWidth() << "," << module2->getHeight() << ")" << std::endl;
                 return true;
             }
         }
@@ -364,8 +374,10 @@ bool HBStarTree::packNode(shared_ptr<HBStarTreeNode> node) {
             // Set the module's position
             module->setPosition(x, y);
             
-            // Update contours
+            // Update horizontal contour
             horizontalContour->addSegment(x, x + module->getWidth(), y + module->getHeight());
+            
+            // Update vertical contour
             verticalContour->addSegment(y, y + module->getHeight(), x + module->getWidth());
             
             return true;
@@ -378,6 +390,7 @@ bool HBStarTree::packNode(shared_ptr<HBStarTreeNode> node) {
             return false;
     }
 }
+
 
 /**
  * Pack a symmetry island
@@ -474,45 +487,56 @@ bool HBStarTree::packSymmetryIsland(shared_ptr<HBStarTreeNode> hierarchyNode) {
         y = max(y, y2); // Ensure placement above contour segment
     }
     
-    // Shift all modules in the symmetry island
-    int deltaX = x - minX;
-    int deltaY = y - minY;
+    // Calculate the offsets to shift the island
+    int islandOffsetX = x - minX;
+    int islandOffsetY = y - minY;
     
     // Update symmetry axis position if needed
     if (asfTree->getSymmetryGroup()->getType() == SymmetryType::VERTICAL) {
         // For vertical symmetry, update the axis position
         double oldAxis = asfTree->getSymmetryAxisPosition();
-        asfTree->getSymmetryGroup()->setAxisPosition(oldAxis + deltaX);
+        asfTree->getSymmetryGroup()->setAxisPosition(oldAxis + islandOffsetX);
     } else { // HORIZONTAL
         // For horizontal symmetry, update the axis position
         double oldAxis = asfTree->getSymmetryAxisPosition();
-        asfTree->getSymmetryGroup()->setAxisPosition(oldAxis + deltaY);
+        asfTree->getSymmetryGroup()->setAxisPosition(oldAxis + islandOffsetY);
     }
     
     // Shift all modules in the symmetry island
     for (const auto& pair : asfTree->getModules()) {
         auto module = pair.second;
-        module->setPosition(module->getX() + deltaX, module->getY() + deltaY);
+        module->setPosition(module->getX() + islandOffsetX, module->getY() + islandOffsetY);
     }
     
-    // Update contours
+    // Update horizontal contour
     // For simplicity, approximate the rectilinear shape with its bounding box
     horizontalContour->addSegment(x, x + width, y + (symMaxY - minY));
-    verticalContour->addSegment(y, y + (symMaxY - minY), x + width);
     
     // More accurate approach: get all horizontal contour segments of the symmetry island
     // and add them to the horizontal contour
     auto segments = asfTree->getContours().first->getSegments();
     for (const auto& segment : segments) {
         horizontalContour->addSegment(
-            segment.start + deltaX,
-            segment.end + deltaX,
-            segment.height + deltaY
+            segment.start + islandOffsetX,
+            segment.end + islandOffsetX,
+            segment.height + islandOffsetY
+        );
+    }
+    
+    // Update vertical contour
+    // Get all vertical contour segments and add them to the vertical contour
+    const auto &vSegs = asfTree->getContours().second->getSegments();
+    for (const auto &s : vSegs) {
+        verticalContour->addSegment(
+            s.start + islandOffsetY,
+            s.end + islandOffsetY,
+            s.height + islandOffsetX // x-coord lives in `height` field
         );
     }
     
     return true;
 }
+
 
 /**
  * Pack a subtree of the HB*-tree

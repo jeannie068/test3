@@ -244,35 +244,46 @@ bool SymmetryGroup::validateSymmetricPlacement(
     return true;
 }
 
-/**
- * Completely rewritten: Calculate a stable symmetry axis position
- */
-/**
- * Completely rewritten: Calculate a stable symmetry axis position
- */
-double SymmetryGroup::calculateAxisPosition(const unordered_map<string, pair<int, int>>& positions) const {
-    // Step 1: Find min/max coordinates to determine the range
-    int minX = numeric_limits<int>::max();
-    int maxX = 0;
-    int minY = numeric_limits<int>::max();
-    int maxY = 0;
+double SymmetryGroup::calculateAxisPosition(const std::unordered_map<std::string, std::pair<int, int>>& positions) const {
+    // Find min/max coordinates to determine the range
+    int minX = std::numeric_limits<int>::max();
+    int maxX = std::numeric_limits<int>::min();
+    int minY = std::numeric_limits<int>::max();
+    int maxY = std::numeric_limits<int>::min();
     
     // Collect all module boundaries to determine placement extent
     for (const auto& pos : positions) {
-        auto moduleIt = pos.second;
-        minX = min(minX, moduleIt.first);
-        maxX = max(maxX, moduleIt.first);
-        minY = min(minY, moduleIt.second);
-        maxY = max(maxY, moduleIt.second);
+        auto modulePos = pos.second;
+        minX = std::min(minX, modulePos.first);
+        maxX = std::max(maxX, modulePos.first);
+        minY = std::min(minY, modulePos.second);
+        maxY = std::max(maxY, modulePos.second);
     }
     
-    // Step 2: Set a stable axis position in the middle of the range
-    // Ensure a positive position
-    double axis = 0;
+    // If no positions provided or invalid bounds, use a safe default
+    if (minX > maxX || minY > maxY) {
+        return 1000.0; // Large safe value
+    }
+    
+    // Minimum axis position to ensure stability
+    const double MIN_AXIS_POSITION = 100.0;
+    
+    // Calculate axis as midpoint of the range, ensuring minimum position
+    double axis = 0.0;
     if (type == SymmetryType::VERTICAL) {
-        axis = max(50.0, (minX + maxX) / 2.0);
+        axis = std::max(MIN_AXIS_POSITION, (minX + maxX) / 2.0);
+        
+        // Ensure the axis is outside the bounding box if all modules are on one side
+        if (minX >= 0 && axis <= maxX) {
+            axis = maxX + 20.0; // Place 20 units to the right of the rightmost module
+        }
     } else { // HORIZONTAL
-        axis = max(50.0, (minY + maxY) / 2.0);
+        axis = std::max(MIN_AXIS_POSITION, (minY + maxY) / 2.0);
+        
+        // Ensure the axis is outside the bounding box if all modules are on one side
+        if (minY >= 0 && axis <= maxY) {
+            axis = maxY + 20.0; // Place 20 units above the topmost module
+        }
     }
     
     return axis;

@@ -1,4 +1,4 @@
-// PlacementSolver.hpp
+// solver.hpp
 #pragma once
 
 #include <memory>
@@ -9,27 +9,19 @@
 #include <unordered_map>
 #include "../data_struct/Module.hpp"
 #include "../data_struct/SymmetryConstraint.hpp"
-#include "../data_struct/BStarTreeNode.hpp"
-#include "../data_struct/ASFBStarTree.hpp"
+#include "../data_struct/HBStarTree.hpp"
 #include "../utils/SA.hpp"
 
 class PlacementSolver {
 private:
-    // Regular modules (not part of symmetry groups)
-    std::map<std::string, std::shared_ptr<Module>> regularModules;
-    
-    // Symmetry groups and their modules
-    std::vector<std::shared_ptr<SymmetryGroup>> symmetryGroups;
-    std::map<std::string, std::shared_ptr<ASFBStarTree>> symmetryTrees;
-    
-    // B*-tree for regular modules
-    std::shared_ptr<BStarTreeNode> regularTree;
-    
     // All modules (reference to both regular and symmetry modules)
     std::map<std::string, std::shared_ptr<Module>> allModules;
     
-    // Mapping from module name to its parent symmetry group
-    std::map<std::string, std::shared_ptr<SymmetryGroup>> moduleToGroup;
+    // Symmetry groups
+    std::vector<std::shared_ptr<SymmetryGroup>> symmetryGroups;
+    
+    // NEW — single hierarchy
+    std::shared_ptr<HBStarTree> hbTree;
     
     // Simulated annealing parameters
     double initialTemperature;
@@ -66,18 +58,10 @@ private:
     void createInitialSolution();
     
     /**
-     * Packs all modules (regular and symmetry groups)
-     * using grid-based packing strategy
+     * Packs all modules
      * @return True if packing succeeded
      */
     bool packSolution();
-    
-    /**
-     * Packs regular modules using B*-tree
-     * @param boundingRects Map of available spaces and their dimensions
-     * @return True if packing succeeded
-     */
-    bool packRegularModules(const std::vector<std::pair<int, int>>& availablePositions);
     
     /**
      * Calculates total placement area
@@ -96,12 +80,6 @@ private:
      * @return True if all symmetry constraints are valid
      */
     bool validateSymmetryConstraints() const;
-    
-    /**
-     * Initializes module grouping
-     * Identifies which modules belong to which symmetry groups
-     */
-    void initializeModuleGrouping();
     
 public:
     /**
