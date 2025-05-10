@@ -56,11 +56,21 @@ private:
     // Cache of affected modules and nodes for incremental packing
     unordered_set<string> affectedModules;
     unordered_set<shared_ptr<HBStarTreeNode>> affectedNodes;
+
+    // New functions for global placement management
+    void improveGlobalPlacement();
+    bool positionSymmetryIsland(std::shared_ptr<HBStarTreeNode> hierarchyNode, int x, int y);
+    int getSymmetryIslandHeight(std::shared_ptr<SymmetryGroup> group) const;
+    int getSymmetryIslandWidth(std::shared_ptr<SymmetryGroup> group) const;
+    void shiftSymmetryGroup(const std::string& groupName, int shiftX, int shiftY);
+    bool fixGlobalOverlaps();
+    void sortSymmetryGroupsByArea();
+    std::vector<std::pair<std::shared_ptr<Module>, std::shared_ptr<Module>>> findAllOverlappingModulePairs() const;
+    std::string findSymmetryGroupForModule(const std::string& moduleName) const;
+    int getGroupArea(const std::string& groupName) const;
     
     // Internal helper methods
     void updateContourNodes();
-    void handleDanglingNodes();
-    bool validateSymmetryIslandPlacement() const;
     shared_ptr<HBStarTreeNode> findNearestContourNode(shared_ptr<HBStarTreeNode> node) const;
     shared_ptr<HBStarTreeNode> findLeftmostSkewedChild(shared_ptr<HBStarTreeNode> node) const;
     void constructSymmetryIslands();
@@ -71,11 +81,29 @@ private:
     bool packSubtree(shared_ptr<HBStarTreeNode> node);
     bool packNode(shared_ptr<HBStarTreeNode> node);
     bool packSymmetryIsland(shared_ptr<HBStarTreeNode> hierarchyNode);
-    bool updateContourForModule(const shared_ptr<Module>& module);
     void markAffectedSubtree(shared_ptr<HBStarTreeNode> node);
-    void markAffectedModules(const string& moduleName);
-    void markAffectedSymmetryGroup(const string& symmetryGroupName);
     void clearAffectedCache();
+
+    // Constants for placement parameters
+    static constexpr int BUFFER = 20;
+    static constexpr int LARGE_BUFFER = 30;
+    static constexpr int EXTRA_LARGE_BUFFER = 50;
+    static constexpr int MAX_ROW_WIDTH = 2000;
+    static constexpr int MAX_FIX_ITERATIONS = 15;
+    static constexpr int LARGE_MODULE_THRESHOLD = 8000; // Area threshold for large modules
+    
+    // New helper functions
+    bool isRegularModule(const std::string& moduleName) const;
+    bool isInSymmetryGroup(const std::string& moduleName) const;
+    int getModuleArea(const std::string& moduleName) const;
+    int getOverlapWidth(const std::shared_ptr<Module>& mod1, const std::shared_ptr<Module>& mod2) const;
+    int getOverlapHeight(const std::shared_ptr<Module>& mod1, const std::shared_ptr<Module>& mod2) const;
+    void shiftModuleRight(const std::shared_ptr<Module>& module, int shift);
+    void shiftModuleDown(const std::shared_ptr<Module>& module, int shift);
+    std::pair<int, int> getSymmetryIslandDimensions(const std::shared_ptr<SymmetryGroup>& group) const;
+    void placeLargeModules();
+    bool verifyNoOverlaps() const;
+    std::vector<std::pair<std::shared_ptr<Module>, std::shared_ptr<Module>>> findAllOverlaps() const;
     
 public:
     /**
