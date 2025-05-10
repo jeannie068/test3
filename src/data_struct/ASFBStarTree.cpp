@@ -219,8 +219,8 @@ void ASFBStarTree::calculateSymmetricModulePositions() {
     
     // If any coordinates are negative, shift all modules
     if (minX < 0 || minY < 0) {
-        int shiftX = std::max(0, -minX) + 5; // 5-unit buffer
-        int shiftY = std::max(0, -minY) + 5; // 5-unit buffer
+        int shiftX = std::max(0, -minX) + 2; // Reduced buffer from 5 to 2
+        int shiftY = std::max(0, -minY) + 2; // Reduced buffer from 5 to 2
         
         for (auto& pair : modules) {
             auto& module = pair.second;
@@ -235,17 +235,13 @@ void ASFBStarTree::calculateSymmetricModulePositions() {
         }
     }
     
-    // Step 2: Apply consistent symmetry positioning for all pairs
+    // Step 2: Apply optimized symmetry positioning for all pairs
     SymmetryType symType = symmetryGroup->getType();
     
-    // IMPORTANT CHANGE: Reduce buffer to ensure true connectivity
-    // Use 0 buffer to ensure modules touch each other
-    const int BUFFER = 0; // Reduced from 5 to improve connectivity
+    // Minimal buffer to ensure true connectivity without excessive padding
+    const int MIN_BUFFER = 2; // Minimal buffer to avoid exact overlaps
     
-    // Track previous module positions to maintain connectivity
-    int prevX = 0;
-    int prevY = 0;
-    std::string prevModule = "";
+    // Track processed modules to maintain connectivity
     std::unordered_map<std::string, bool> processedModules;
     
     // Build an ordering of symmetry pairs for consistent placement
@@ -253,7 +249,7 @@ void ASFBStarTree::calculateSymmetricModulePositions() {
     // Sort pairs by module name to ensure consistent ordering
     std::sort(orderedPairs.begin(), orderedPairs.end());
     
-    // Process symmetry pairs with exact calculations and maintain connectivity
+    // Process symmetry pairs with exact calculations to avoid overlaps
     for (size_t i = 0; i < orderedPairs.size(); i++) {
         const auto& pair = orderedPairs[i];
         const std::string& module1 = pair.first;
@@ -276,11 +272,13 @@ void ASFBStarTree::calculateSymmetricModulePositions() {
             int width1 = mod1->getWidth();
             int width2 = mod2->getWidth();
             
-            // Calculate y-position to maintain connectivity
+            // CRITICAL CHANGE: Calculate non-overlapping positions using exact arithmetic
+            int mod1X = static_cast<int>(symmetryAxisPosition) - width1 - MIN_BUFFER;
+            int mod2X = static_cast<int>(symmetryAxisPosition) + MIN_BUFFER;
+            
+            // Y-position based on already processed modules
             int yPos = 0;
             if (!processedModules.empty() && i > 0) {
-                // Position below the previous module to ensure connectivity
-                // Find maximum Y of already-placed modules
                 for (const auto& placedMod : processedModules) {
                     auto modIt = modules.find(placedMod.first);
                     if (modIt != modules.end()) {
@@ -288,43 +286,34 @@ void ASFBStarTree::calculateSymmetricModulePositions() {
                         yPos = std::max(yPos, modBottom);
                     }
                 }
-                // No gap for true connectivity
-                yPos += 0;
+                // Add minimal spacing for connectivity without gaps
+                yPos += MIN_BUFFER;
             }
-            
-            // First module on left side of the axis with no buffer
-            int mod1X = static_cast<int>(symmetryAxisPosition) - width1 - BUFFER;
-            // Second module on right side of the axis with no buffer
-            int mod2X = static_cast<int>(symmetryAxisPosition) + BUFFER;
             
             // Set positions with symmetry around the axis
             mod1->setPosition(mod1X, yPos);
             mod2->setPosition(mod2X, yPos);
             
-            // Record module as processed
-            processedModules[module1] = true;
-            processedModules[module2] = true;
-            
-            // Store for connectivity with next module
-            prevX = std::min(mod1X, mod2X);
-            prevY = yPos + std::max(mod1->getHeight(), mod2->getHeight());
-            prevModule = module1;
-            
             std::cout << "Positioned symmetry pair: " << module1 << " at (" 
                      << mod1->getX() << "," << mod1->getY() << ") and " 
                      << module2 << " at (" << mod2->getX() << "," << mod2->getY() 
                      << ") about axis=" << symmetryAxisPosition << std::endl;
+            
+            // IMPORTANT: Double-check no overlap was created
+            if (mod1->getX() + mod1->getWidth() > mod2->getX()) {
+                std::cout << "Warning: Correcting overlap in symmetry pair" << std::endl;
+                // Adjust positions to eliminate overlap
+                mod1->setPosition(mod2->getX() - mod1->getWidth() - 1, yPos);
+            }
         } 
         else { // HORIZONTAL
-            // Similar logic but for horizontal symmetry
+            // Similar logic for horizontal symmetry
             int height1 = mod1->getHeight();
             int height2 = mod2->getHeight();
             
             // Calculate x-position to maintain connectivity
             int xPos = 0;
             if (!processedModules.empty() && i > 0) {
-                // Position to the right of the previous module to ensure connectivity
-                // Find maximum X of already-placed modules
                 for (const auto& placedMod : processedModules) {
                     auto modIt = modules.find(placedMod.first);
                     if (modIt != modules.end()) {
@@ -332,28 +321,27 @@ void ASFBStarTree::calculateSymmetricModulePositions() {
                         xPos = std::max(xPos, modRight);
                     }
                 }
-                // No gap for true connectivity
-                xPos += 0;
+                xPos += MIN_BUFFER;
             }
             
-            // First module below the axis with no buffer
-            int mod1Y = static_cast<int>(symmetryAxisPosition) - height1 - BUFFER;
-            // Second module above the axis with no buffer
-            int mod2Y = static_cast<int>(symmetryAxisPosition) + BUFFER;
+            // CRITICAL CHANGE: Calculate non-overlapping positions
+            int mod1Y = static_cast<int>(symmetryAxisPosition) - height1 - MIN_BUFFER;
+            int mod2Y = static_cast<int>(symmetryAxisPosition) + MIN_BUFFER;
             
             // Set positions with symmetry around the axis
             mod1->setPosition(xPos, mod1Y);
             mod2->setPosition(xPos, mod2Y);
             
-            // Record module as processed
-            processedModules[module1] = true;
-            processedModules[module2] = true;
-            
-            // Store for connectivity with next module
-            prevX = xPos + std::max(mod1->getWidth(), mod2->getWidth());
-            prevY = std::min(mod1Y, mod2Y);
-            prevModule = module1;
+            // IMPORTANT: Double-check no overlap was created
+            if (mod1->getY() + mod1->getHeight() > mod2->getY()) {
+                // Adjust positions to eliminate overlap
+                mod1->setPosition(xPos, mod2->getY() - mod1->getHeight() - 1);
+            }
         }
+        
+        // Record modules as processed
+        processedModules[module1] = true;
+        processedModules[module2] = true;
     }
     
     // Step 3: Position self-symmetric modules
@@ -370,11 +358,11 @@ void ASFBStarTree::calculateSymmetricModulePositions() {
                 selfSymYPos = std::max(selfSymYPos, mod->getY() + mod->getHeight());
             }
         }
-        // No gap between pairs and self-symmetric modules
+        // Minimal spacing for connectivity
         if (symType == SymmetryType::VERTICAL) {
-            selfSymYPos += 0; // No gap
+            selfSymYPos += MIN_BUFFER;
         } else {
-            selfSymXPos += 0; // No gap
+            selfSymXPos += MIN_BUFFER;
         }
     }
     
@@ -387,27 +375,27 @@ void ASFBStarTree::calculateSymmetricModulePositions() {
         // Center module on the symmetry axis
         if (symType == SymmetryType::VERTICAL) {
             int width = module->getWidth();
+            // Exact position calculation to center on axis
             int x = static_cast<int>(symmetryAxisPosition) - width / 2;
-            // Use accumulated Y position for connectivity
             module->setPosition(x, selfSymYPos);
             
             // Update for next self-symmetric module
-            selfSymYPos += module->getHeight() + 0; // No gap
+            selfSymYPos += module->getHeight() + MIN_BUFFER;
         } else { // HORIZONTAL
             int height = module->getHeight();
+            // Exact position calculation to center on axis
             int y = static_cast<int>(symmetryAxisPosition) - height / 2;
-            // Use accumulated X position for connectivity
             module->setPosition(selfSymXPos, y);
             
             // Update for next self-symmetric module
-            selfSymXPos += module->getWidth() + 0; // No gap
+            selfSymXPos += module->getWidth() + MIN_BUFFER;
         }
-        
-        // Mark as processed
-        processedModules[moduleName] = true;
         
         std::cout << "Positioned self-symmetric module: " << moduleName 
                  << " at (" << module->getX() << "," << module->getY() << ")" << std::endl;
+        
+        // Mark as processed
+        processedModules[moduleName] = true;
     }
     
     // Step 4: Verify connectivity between all modules
@@ -882,15 +870,190 @@ bool ASFBStarTree::validateSymmetryConstraints() const {
  * This is a dedicated function for fixing symmetry violations
  */
 void ASFBStarTree::enforceSymmetryConstraints() {
-    // Temporarily disable validation-only mode
-    bool savedMode = isValidationOnly;
-    isValidationOnly = false;
+    if (!symmetryGroup) {
+        std::cerr << "No symmetry group defined" << std::endl;
+        return;
+    }
     
-    // Call validation function which will now fix violations
-    validateSymmetryConstraints();
+    std::cout << "Enforcing symmetry constraints for group: " << symmetryGroup->getName() << std::endl;
     
-    // Restore previous validation mode
-    isValidationOnly = savedMode;
+    // Store original positions to detect changes
+    std::unordered_map<std::string, std::pair<int, int>> originalPositions;
+    for (const auto& pair : modules) {
+        originalPositions[pair.first] = {pair.second->getX(), pair.second->getY()};
+    }
+    
+    // More precision for symmetry enforcement but still detect significant violations
+    const double TOLERANCE = 1.0;
+    
+    // Check and enforce symmetry for pairs
+    for (const auto& pair : symmetryGroup->getSymmetryPairs()) {
+        auto mod1It = modules.find(pair.first);
+        auto mod2It = modules.find(pair.second);
+        
+        if (mod1It == modules.end() || mod2It == modules.end()) {
+            std::cerr << "Module pair not found: " << pair.first << " and " << pair.second << std::endl;
+            continue;
+        }
+        
+        auto mod1 = mod1It->second;
+        auto mod2 = mod2It->second;
+        
+        if (!mod1 || !mod2) continue;
+        
+        // Ensure both modules have the same dimensions (rotation status)
+        mod2->setRotation(mod1->getRotated());
+        
+        if (symmetryGroup->getType() == SymmetryType::VERTICAL) {
+            // Calculate centers
+            double center1X = mod1->getX() + mod1->getWidth() / 2.0;
+            double center2X = mod2->getX() + mod2->getWidth() / 2.0;
+            
+            // Check symmetry
+            double axis2x = 2.0 * symmetryAxisPosition;
+            double diff = std::abs((center1X + center2X) - axis2x);
+            
+            if (diff > TOLERANCE) {
+                // Calculate exact positions for symmetry
+                double expectedCenter1X = (center1X + center2X) / 2.0 - (center2X - symmetryAxisPosition);
+                double expectedCenter2X = (center1X + center2X) / 2.0 + (symmetryAxisPosition - center1X);
+                
+                int newX1 = static_cast<int>(expectedCenter1X - mod1->getWidth() / 2.0);
+                int newX2 = static_cast<int>(expectedCenter2X - mod2->getWidth() / 2.0);
+                
+                // Ensure they don't overlap by checking if their centers are far enough apart
+                if (std::abs(expectedCenter1X - expectedCenter2X) < (mod1->getWidth() / 2.0 + mod2->getWidth() / 2.0)) {
+                    // They would overlap - adjust positions
+                    double minDistance = mod1->getWidth() / 2.0 + mod2->getWidth() / 2.0 + 1; // 1 extra unit
+                    
+                    // Adjust equally from center
+                    expectedCenter1X = symmetryAxisPosition - minDistance / 2.0;
+                    expectedCenter2X = symmetryAxisPosition + minDistance / 2.0;
+                    
+                    newX1 = static_cast<int>(expectedCenter1X - mod1->getWidth() / 2.0);
+                    newX2 = static_cast<int>(expectedCenter2X - mod2->getWidth() / 2.0);
+                }
+                
+                // Update positions
+                mod1->setPosition(newX1, mod1->getY());
+                mod2->setPosition(newX2, mod2->getY());
+                
+                std::cout << "Enforced X-axis symmetry for pair: " 
+                          << pair.first << " and " << pair.second << std::endl;
+            }
+            
+            // Ensure Y coordinates are exactly equal
+            if (std::abs(mod1->getY() - mod2->getY()) > TOLERANCE) {
+                int newY = (mod1->getY() + mod2->getY()) / 2;
+                mod1->setPosition(mod1->getX(), newY);
+                mod2->setPosition(mod2->getX(), newY);
+                
+                std::cout << "Enforced Y equality for pair: " 
+                          << pair.first << " and " << pair.second << std::endl;
+            }
+        } else { // HORIZONTAL
+            // Similar logic for horizontal symmetry
+            double center1Y = mod1->getY() + mod1->getHeight() / 2.0;
+            double center2Y = mod2->getY() + mod2->getHeight() / 2.0;
+            
+            double axis2y = 2.0 * symmetryAxisPosition;
+            double diff = std::abs((center1Y + center2Y) - axis2y);
+            
+            if (diff > TOLERANCE) {
+                // Calculate exact positions for symmetry
+                double expectedCenter1Y = (center1Y + center2Y) / 2.0 - (center2Y - symmetryAxisPosition);
+                double expectedCenter2Y = (center1Y + center2Y) / 2.0 + (symmetryAxisPosition - center1Y);
+                
+                int newY1 = static_cast<int>(expectedCenter1Y - mod1->getHeight() / 2.0);
+                int newY2 = static_cast<int>(expectedCenter2Y - mod2->getHeight() / 2.0);
+                
+                // Ensure they don't overlap
+                if (std::abs(expectedCenter1Y - expectedCenter2Y) < (mod1->getHeight() / 2.0 + mod2->getHeight() / 2.0)) {
+                    // They would overlap - adjust positions
+                    double minDistance = mod1->getHeight() / 2.0 + mod2->getHeight() / 2.0 + 1; // 1 extra unit
+                    
+                    // Adjust equally from center
+                    expectedCenter1Y = symmetryAxisPosition - minDistance / 2.0;
+                    expectedCenter2Y = symmetryAxisPosition + minDistance / 2.0;
+                    
+                    newY1 = static_cast<int>(expectedCenter1Y - mod1->getHeight() / 2.0);
+                    newY2 = static_cast<int>(expectedCenter2Y - mod2->getHeight() / 2.0);
+                }
+                
+                // Update positions
+                mod1->setPosition(mod1->getX(), newY1);
+                mod2->setPosition(mod2->getX(), newY2);
+                
+                std::cout << "Enforced Y-axis symmetry for pair: " 
+                          << pair.first << " and " << pair.second << std::endl;
+            }
+            
+            // Ensure X coordinates are exactly equal
+            if (std::abs(mod1->getX() - mod2->getX()) > TOLERANCE) {
+                int newX = (mod1->getX() + mod2->getX()) / 2;
+                mod1->setPosition(newX, mod1->getY());
+                mod2->setPosition(newX, mod2->getY());
+                
+                std::cout << "Enforced X equality for pair: " 
+                          << pair.first << " and " << pair.second << std::endl;
+            }
+        }
+    }
+    
+    // Enforce symmetry for self-symmetric modules
+    for (const auto& moduleName : selfSymmetricModules) {
+        auto it = modules.find(moduleName);
+        if (it == modules.end()) {
+            std::cerr << "Self-symmetric module not found: " << moduleName << std::endl;
+            continue;
+        }
+        
+        auto module = it->second;
+        
+        if (symmetryGroup->getType() == SymmetryType::VERTICAL) {
+            // Calculate center X
+            double centerX = module->getX() + module->getWidth() / 2.0;
+            
+            // Check if center is on the axis
+            if (std::abs(centerX - symmetryAxisPosition) > TOLERANCE) {
+                // Calculate new X position to center exactly on axis
+                int newX = static_cast<int>(symmetryAxisPosition - module->getWidth() / 2.0);
+                module->setPosition(newX, module->getY());
+                
+                std::cout << "Centered self-symmetric module " << moduleName 
+                          << " on vertical axis" << std::endl;
+            }
+        } else { // HORIZONTAL
+            // Calculate center Y
+            double centerY = module->getY() + module->getHeight() / 2.0;
+            
+            // Check if center is on the axis
+            if (std::abs(centerY - symmetryAxisPosition) > TOLERANCE) {
+                // Calculate new Y position to center exactly on axis
+                int newY = static_cast<int>(symmetryAxisPosition - module->getHeight() / 2.0);
+                module->setPosition(module->getX(), newY);
+                
+                std::cout << "Centered self-symmetric module " << moduleName 
+                          << " on horizontal axis" << std::endl;
+            }
+        }
+    }
+    
+    // Check if any positions were changed
+    bool positionsChanged = false;
+    for (const auto& pair : modules) {
+        const auto& original = originalPositions[pair.first];
+        if (original.first != pair.second->getX() || original.second != pair.second->getY()) {
+            positionsChanged = true;
+            break;
+        }
+    }
+    
+    // Final check for overlaps
+    if (positionsChanged && checkForOverlaps()) {
+        std::cout << "Warning: Enforcing symmetry constraints introduced overlaps. Attempting fix..." << std::endl;
+        fixOverlaps();
+    }
 }
 
 /**
@@ -1806,80 +1969,316 @@ bool ASFBStarTree::checkForOverlaps() {
 void ASFBStarTree::fixOverlaps() {
     bool overlapsExist = true;
     int iterations = 0;
-    const int MAX_ITERATIONS = 10;
+    const int MAX_ITERATIONS = 15; // Increased from 10
+    
+    std::vector<std::pair<std::shared_ptr<Module>, std::shared_ptr<Module>>> lastOverlaps;
     
     while (overlapsExist && iterations < MAX_ITERATIONS) {
         overlapsExist = false;
         iterations++;
         
+        // Find all overlapping pairs
+        std::vector<std::pair<std::shared_ptr<Module>, std::shared_ptr<Module>>> overlaps;
+        
         for (auto it1 = modules.begin(); it1 != modules.end(); ++it1) {
             auto mod1 = it1->second;
-            bool mod1Fixed = false;
             
             for (auto it2 = std::next(it1); it2 != modules.end(); ++it2) {
                 auto mod2 = it2->second;
                 
                 if (mod1->overlaps(*mod2)) {
                     overlapsExist = true;
+                    overlaps.push_back({mod1, mod2});
                     
-                    // Check if part of same symmetry pair
+                    std::cout << "  Overlap detected between " << it1->first 
+                              << " and " << it2->first << std::endl;
+                }
+            }
+        }
+        
+        // If no overlaps, we're done
+        if (overlaps.empty()) break;
+        
+        // If we're on our last iterations and still have the same overlaps, try more aggressive measures
+        if (iterations > MAX_ITERATIONS / 2 && overlaps.size() == lastOverlaps.size()) {
+            bool sameOverlaps = true;
+            for (size_t i = 0; i < overlaps.size() && i < lastOverlaps.size(); ++i) {
+                if (overlaps[i].first != lastOverlaps[i].first || 
+                    overlaps[i].second != lastOverlaps[i].second) {
+                    sameOverlaps = false;
+                    break;
+                }
+            }
+            
+            if (sameOverlaps) {
+                std::cout << "  Same overlaps detected for multiple iterations. Using more aggressive fixes." << std::endl;
+                
+                // For each overlapping pair
+                for (auto& pair : overlaps) {
+                    auto mod1 = pair.first;
+                    auto mod2 = pair.second;
+                    
+                    // Check if this is a symmetry pair
                     bool isSymPair = false;
-                    for (const auto& pair : symmetryGroup->getSymmetryPairs()) {
-                        if ((pair.first == it1->first && pair.second == it2->first) ||
-                            (pair.first == it2->first && pair.second == it1->first)) {
+                    for (const auto& symPair : symmetryGroup->getSymmetryPairs()) {
+                        if ((symPair.first == mod1->getName() && symPair.second == mod2->getName()) ||
+                            (symPair.first == mod2->getName() && symPair.second == mod1->getName())) {
                             isSymPair = true;
                             break;
                         }
                     }
                     
                     if (isSymPair) {
-                        // For symmetry pairs, move based on symmetry type
+                        // Special care needed for symmetry pairs
                         if (symmetryGroup->getType() == SymmetryType::VERTICAL) {
-                            // Move one module down
-                            mod2->setPosition(mod2->getX(), mod1->getY() + mod1->getHeight() + 2);
+                            // For vertical symmetry, adjust positions more aggressively
+                            double center1X = mod1->getX() + mod1->getWidth() / 2.0;
+                            double center2X = mod2->getX() + mod2->getWidth() / 2.0;
                             
-                            // Move its symmetric pair down too
-                            auto symPair = symmetryGroup->getSymmetricPair(it2->first);
-                            if (!symPair.empty() && modules.find(symPair) != modules.end()) {
-                                modules[symPair]->setPosition(
-                                    modules[symPair]->getX(), 
-                                    mod1->getY() + mod1->getHeight() + 2
+                            // Ensure they're on opposite sides of the axis
+                            if ((center1X < symmetryAxisPosition && center2X < symmetryAxisPosition) ||
+                                (center1X > symmetryAxisPosition && center2X > symmetryAxisPosition)) {
+                                
+                                // Force them to opposite sides
+                                if (center1X < symmetryAxisPosition) {
+                                    // mod1 on left, mod2 needs to go right
+                                    mod2->setPosition(
+                                        static_cast<int>(symmetryAxisPosition + 5), // force 5 units from axis
+                                        mod2->getY()
+                                    );
+                                } else {
+                                    // mod1 on right, mod2 needs to go left
+                                    mod2->setPosition(
+                                        static_cast<int>(symmetryAxisPosition - mod2->getWidth() - 5), // force 5 units from axis
+                                        mod2->getY()
+                                    );
+                                }
+                            } else {
+                                // They're on the correct sides but still overlapping
+                                // Try increasing their Y-separation
+                                mod2->setPosition(
+                                    mod2->getX(),
+                                    mod2->getY() + mod2->getHeight() + 5 // force 5 units gap
                                 );
                             }
-                        } else {
-                            // Move one module to the right
-                            mod2->setPosition(mod1->getX() + mod1->getWidth() + 2, mod2->getY());
+                        } else { // HORIZONTAL
+                            // Similar logic for horizontal symmetry
+                            double center1Y = mod1->getY() + mod1->getHeight() / 2.0;
+                            double center2Y = mod2->getY() + mod2->getHeight() / 2.0;
                             
-                            // Move its symmetric pair to the right too
-                            auto symPair = symmetryGroup->getSymmetricPair(it2->first);
-                            if (!symPair.empty() && modules.find(symPair) != modules.end()) {
-                                modules[symPair]->setPosition(
-                                    mod1->getX() + mod1->getWidth() + 2,
-                                    modules[symPair]->getY()
+                            // Ensure they're on opposite sides of the axis
+                            if ((center1Y < symmetryAxisPosition && center2Y < symmetryAxisPosition) ||
+                                (center1Y > symmetryAxisPosition && center2Y > symmetryAxisPosition)) {
+                                
+                                // Force them to opposite sides
+                                if (center1Y < symmetryAxisPosition) {
+                                    // mod1 below, mod2 needs to go above
+                                    mod2->setPosition(
+                                        mod2->getX(),
+                                        static_cast<int>(symmetryAxisPosition + 5) // force 5 units from axis
+                                    );
+                                } else {
+                                    // mod1 above, mod2 needs to go below
+                                    mod2->setPosition(
+                                        mod2->getX(),
+                                        static_cast<int>(symmetryAxisPosition - mod2->getHeight() - 5) // force 5 units from axis
+                                    );
+                                }
+                            } else {
+                                // They're on the correct sides but still overlapping
+                                // Try increasing their X-separation
+                                mod2->setPosition(
+                                    mod2->getX() + mod2->getWidth() + 5, // force 5 units gap
+                                    mod2->getY()
                                 );
                             }
                         }
                     } else {
-                        // For non-symmetry pairs, just shift one module
-                        if (symmetryGroup->getType() == SymmetryType::VERTICAL) {
-                            mod2->setPosition(mod2->getX(), mod1->getY() + mod1->getHeight() + 2);
+                        // Not a symmetry pair, but still in the same group
+                        // Move them apart in Y-direction
+                        int overlapHeight = 
+                            std::min(mod1->getY() + mod1->getHeight(), mod2->getY() + mod2->getHeight()) -
+                            std::max(mod1->getY(), mod2->getY());
+                        
+                        if (mod1->getY() <= mod2->getY()) {
+                            mod2->setPosition(
+                                mod2->getX(),
+                                mod1->getY() + mod1->getHeight() + 5 // Add 5 units gap
+                            );
                         } else {
-                            mod2->setPosition(mod1->getX() + mod1->getWidth() + 2, mod2->getY());
+                            mod1->setPosition(
+                                mod1->getX(),
+                                mod2->getY() + mod2->getHeight() + 5 // Add 5 units gap
+                            );
                         }
                     }
-                    
-                    mod1Fixed = true;
+                }
+            }
+        }
+        
+        // Standard fixing for each overlapping pair
+        for (auto& pair : overlaps) {
+            auto mod1 = pair.first;
+            auto mod2 = pair.second;
+            
+            // Calculate overlap dimensions
+            int overlapWidth = 
+                std::min(mod1->getX() + mod1->getWidth(), mod2->getX() + mod2->getWidth()) -
+                std::max(mod1->getX(), mod2->getX());
+            
+            int overlapHeight = 
+                std::min(mod1->getY() + mod1->getHeight(), mod2->getY() + mod2->getHeight()) -
+                std::max(mod1->getY(), mod2->getY());
+            
+            // Check if this is a symmetry pair
+            bool isSymPair = false;
+            for (const auto& symPair : symmetryGroup->getSymmetryPairs()) {
+                if ((symPair.first == mod1->getName() && symPair.second == mod2->getName()) ||
+                    (symPair.first == mod2->getName() && symPair.second == mod1->getName())) {
+                    isSymPair = true;
                     break;
                 }
             }
             
-            if (mod1Fixed) break;
+            if (isSymPair) {
+                // For symmetry pairs, adjust according to symmetry type
+                if (symmetryGroup->getType() == SymmetryType::VERTICAL) {
+                    // Check which module needs to be adjusted based on axis
+                    if (mod1->getX() + mod1->getWidth() / 2.0 < symmetryAxisPosition &&
+                        mod2->getX() + mod2->getWidth() / 2.0 < symmetryAxisPosition) {
+                        // Both on left side of axis - move one vertically
+                        if (overlapHeight < overlapWidth) {
+                            if (mod1->getY() <= mod2->getY()) {
+                                mod2->setPosition(mod2->getX(), mod1->getY() + mod1->getHeight() + 1);
+                            } else {
+                                mod1->setPosition(mod1->getX(), mod2->getY() + mod2->getHeight() + 1);
+                            }
+                        } else {
+                            // Move the one closer to axis further left
+                            if (mod1->getX() + mod1->getWidth() > mod2->getX() + mod2->getWidth()) {
+                                mod2->setPosition(mod1->getX() - mod2->getWidth() - 1, mod2->getY());
+                            } else {
+                                mod1->setPosition(mod2->getX() - mod1->getWidth() - 1, mod1->getY());
+                            }
+                        }
+                    } else if (mod1->getX() + mod1->getWidth() / 2.0 > symmetryAxisPosition &&
+                               mod2->getX() + mod2->getWidth() / 2.0 > symmetryAxisPosition) {
+                        // Both on right side of axis - similar to above
+                        if (overlapHeight < overlapWidth) {
+                            if (mod1->getY() <= mod2->getY()) {
+                                mod2->setPosition(mod2->getX(), mod1->getY() + mod1->getHeight() + 1);
+                            } else {
+                                mod1->setPosition(mod1->getX(), mod2->getY() + mod2->getHeight() + 1);
+                            }
+                        } else {
+                            // Move the one closer to axis further right
+                            if (mod1->getX() < mod2->getX()) {
+                                mod2->setPosition(mod1->getX() + mod1->getWidth() + 1, mod2->getY());
+                            } else {
+                                mod1->setPosition(mod2->getX() + mod2->getWidth() + 1, mod1->getY());
+                            }
+                        }
+                    } else {
+                        // They're properly placed on opposite sides, but still overlap
+                        // Adjust Y positions
+                        if (mod1->getY() <= mod2->getY()) {
+                            mod2->setPosition(mod2->getX(), mod1->getY() + mod1->getHeight() + 1);
+                        } else {
+                            mod1->setPosition(mod1->getX(), mod2->getY() + mod2->getHeight() + 1);
+                        }
+                    }
+                } else { // HORIZONTAL
+                    // Similar logic for horizontal symmetry
+                    if (mod1->getY() + mod1->getHeight() / 2.0 < symmetryAxisPosition &&
+                        mod2->getY() + mod2->getHeight() / 2.0 < symmetryAxisPosition) {
+                        // Both below axis
+                        if (overlapWidth < overlapHeight) {
+                            if (mod1->getX() <= mod2->getX()) {
+                                mod2->setPosition(mod1->getX() + mod1->getWidth() + 1, mod2->getY());
+                            } else {
+                                mod1->setPosition(mod2->getX() + mod2->getWidth() + 1, mod1->getY());
+                            }
+                        } else {
+                            // Move the one closer to axis further down
+                            if (mod1->getY() + mod1->getHeight() > mod2->getY() + mod2->getHeight()) {
+                                mod2->setPosition(mod2->getX(), mod1->getY() - mod2->getHeight() - 1);
+                            } else {
+                                mod1->setPosition(mod1->getX(), mod2->getY() - mod1->getHeight() - 1);
+                            }
+                        }
+                    } else if (mod1->getY() + mod1->getHeight() / 2.0 > symmetryAxisPosition &&
+                               mod2->getY() + mod2->getHeight() / 2.0 > symmetryAxisPosition) {
+                        // Both above axis
+                        if (overlapWidth < overlapHeight) {
+                            if (mod1->getX() <= mod2->getX()) {
+                                mod2->setPosition(mod1->getX() + mod1->getWidth() + 1, mod2->getY());
+                            } else {
+                                mod1->setPosition(mod2->getX() + mod2->getWidth() + 1, mod1->getY());
+                            }
+                        } else {
+                            // Move the one closer to axis further up
+                            if (mod1->getY() < mod2->getY()) {
+                                mod2->setPosition(mod2->getX(), mod1->getY() + mod1->getHeight() + 1);
+                            } else {
+                                mod1->setPosition(mod1->getX(), mod2->getY() + mod2->getHeight() + 1);
+                            }
+                        }
+                    } else {
+                        // They're properly placed on opposite sides, but still overlap
+                        // Adjust X positions
+                        if (mod1->getX() <= mod2->getX()) {
+                            mod2->setPosition(mod1->getX() + mod1->getWidth() + 1, mod2->getY());
+                        } else {
+                            mod1->setPosition(mod2->getX() + mod2->getWidth() + 1, mod1->getY());
+                        }
+                    }
+                }
+            } else {
+                // Regular non-symmetry-pair modules
+                // Choose optimal displacement direction
+                if (overlapHeight <= overlapWidth) {
+                    // Shift vertically
+                    if (mod1->getY() <= mod2->getY()) {
+                        mod2->setPosition(mod2->getX(), mod1->getY() + mod1->getHeight() + 1);
+                    } else {
+                        mod1->setPosition(mod1->getX(), mod2->getY() + mod2->getHeight() + 1);
+                    }
+                } else {
+                    // Shift horizontally
+                    if (mod1->getX() <= mod2->getX()) {
+                        mod2->setPosition(mod1->getX() + mod1->getWidth() + 1, mod2->getY());
+                    } else {
+                        mod1->setPosition(mod2->getX() + mod2->getWidth() + 1, mod1->getY());
+                    }
+                }
+            }
         }
+        
+        // Update lastOverlaps for next iteration
+        lastOverlaps = overlaps;
     }
     
     if (overlapsExist) {
         std::cout << "Warning: Could not resolve all overlaps after " 
                   << MAX_ITERATIONS << " iterations" << std::endl;
+        
+        // Final attempt: try emergency spread
+        double spreadFactor = 1.5;
+        
+        for (auto& pair : modules) {
+            auto& module = pair.second;
+            module->setPosition(
+                static_cast<int>(module->getX() * spreadFactor),
+                static_cast<int>(module->getY() * spreadFactor)
+            );
+        }
+        
+        // Also adjust symmetry axis
+        if (symmetryGroup->getType() == SymmetryType::VERTICAL) {
+            symmetryAxisPosition *= spreadFactor;
+        } else {
+            symmetryAxisPosition *= spreadFactor;
+        }
     } else {
         std::cout << "All overlaps resolved in " << iterations << " iterations" << std::endl;
     }

@@ -85,9 +85,9 @@ private:
     void clearAffectedCache();
 
     // Constants for placement parameters
-    static constexpr int BUFFER = 20;
-    static constexpr int LARGE_BUFFER = 30;
-    static constexpr int EXTRA_LARGE_BUFFER = 50;
+    static constexpr int BUFFER = 10;
+    static constexpr int LARGE_BUFFER = 20;
+    static constexpr int EXTRA_LARGE_BUFFER = 30;
     static constexpr int MAX_ROW_WIDTH = 2000;
     static constexpr int MAX_FIX_ITERATIONS = 15;
     static constexpr int LARGE_MODULE_THRESHOLD = 8000; // Area threshold for large modules

@@ -58,10 +58,16 @@ bool HBStarTree::pack() {
     // Use improved global placement strategy for symmetry groups and remaining modules
     improveGlobalPlacement();
     
+    // Apply compaction to reduce empty space
+    // compactPlacement();
+    
     // Fix any remaining global overlaps between modules
     if (hasOverlap()) {
-        std::cout << "Detected global overlaps, applying fix..." << std::endl;
-        fixGlobalOverlaps();
+        std::cout << "Detected global overlaps, applying enhanced fix..." << std::endl;
+        if (!fixGlobalOverlaps()) {
+            std::cerr << "Could not fix all overlaps automatically" << std::endl;
+            // Continue anyway, we'll handle the result in the final validation
+        }
     }
     
     // Calculate maximum coordinates
@@ -87,6 +93,7 @@ bool HBStarTree::pack() {
     
     // Calculate total area
     totalArea = maxX * maxY;
+    std::cout << "Total placement area: " << totalArea << std::endl;
     
     // Update contour nodes
     updateContourNodes();
@@ -102,12 +109,23 @@ bool HBStarTree::pack() {
     // Verify no overlaps in final placement
     if (hasOverlap()) {
         std::cerr << "WARNING: Final placement still has overlaps" << std::endl;
-        // One last attempt to fix remaining overlaps
-        fixGlobalOverlaps();
         
-        // Final check after last fixing attempt
+        // Emergency recovery: try to fix critical symmetry group overlaps
+        for (const auto& symGroup : symmetryGroups) {
+            auto node = getSymmetryGroupNode(symGroup->getName());
+            if (node && node->getASFTree()) {
+                node->getASFTree()->emergencyRecovery();
+            }
+        }
+        
+        // One final overlap check
         if (hasOverlap()) {
             std::cerr << "CRITICAL ERROR: Unable to resolve all overlaps" << std::endl;
+            
+            // Return with existing placement even with overlaps
+            // The calling code can decide whether to use this result
+            // or try a different approach
+            packed = true;
             return false;
         }
     }
