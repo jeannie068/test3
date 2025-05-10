@@ -99,6 +99,8 @@ public:
      */
     void fixOverlaps();
 
+    void enforceProperty1();
+
     /**
      * Checks symmetry constraints without modifying any module positions
      * 
@@ -111,6 +113,17 @@ public:
      * This is a dedicated function for fixing symmetry violations
      */
     void enforceSymmetryConstraints();
+
+    /**
+     * NEW: Rebuilds the local contours after module positions have changed
+     */
+    void rebuildLocalContours();
+
+    /**
+     * Apply branch guard to ensure self-symmetric modules stay on the correct branch
+     * NEW: Added to enforce Property 1 from the paper
+     */
+    void applyBranchGuard();
 
 
     /**

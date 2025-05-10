@@ -15,6 +15,7 @@ using namespace std;
 
 /**
  * Calculates the coordinates of all modules by packing the HB*-tree
+ * FIX: Added call to rebuildGlobalContours at the end
  */
 bool HBStarTree::pack() {
     if (!root) {
@@ -22,15 +23,19 @@ bool HBStarTree::pack() {
         return false;
     }
     
-    // Reset contours
+    // Reset contours with reasonable width instead of INT_MAX
     horizontalContour->clear();
     verticalContour->clear();
     
+    // Find initial maximum dimensions to use as bounds
+    int initialMaxX = 10000; // Start with a reasonable default
+    int initialMaxY = 10000;
+    
     // Initialize horizontal contour with a segment at y=0
-    horizontalContour->addSegment(0, std::numeric_limits<int>::max(), 0);
+    horizontalContour->initializeSentinel(initialMaxX);
     
     // Initialize vertical contour with a segment at x=0
-    verticalContour->addSegment(0, std::numeric_limits<int>::max(), 0);
+    verticalContour->initializeSentinel(initialMaxY);
     
     // Clear affected cache
     clearAffectedCache();
@@ -47,7 +52,7 @@ bool HBStarTree::pack() {
                 return false;
             }
             
-            // Ensure symmetry constraints are enforced
+            // Ensure symmetry constraints are enforced and contours are rebuilt
             asfTree->enforceSymmetryConstraints();
         }
     }
@@ -58,9 +63,6 @@ bool HBStarTree::pack() {
     // Use improved global placement strategy for symmetry groups and remaining modules
     improveGlobalPlacement();
     
-    // Apply compaction to reduce empty space
-    // compactPlacement();
-    
     // Fix any remaining global overlaps between modules
     if (hasOverlap()) {
         std::cout << "Detected global overlaps, applying enhanced fix..." << std::endl;
@@ -70,30 +72,8 @@ bool HBStarTree::pack() {
         }
     }
     
-    // Calculate maximum coordinates
-    int maxX = 0, maxY = 0;
-    
-    for (const auto& pair : modules) {
-        const auto& module = pair.second;
-        maxX = std::max(maxX, module->getX() + module->getWidth());
-        maxY = std::max(maxY, module->getY() + module->getHeight());
-    }
-    
-    // For symmetry groups, check all modules in their ASF-B*-trees
-    for (const auto& pair : symmetryGroupNodes) {
-        auto asfTree = pair.second->getASFTree();
-        if (asfTree) {
-            for (const auto& modulePair : asfTree->getModules()) {
-                const auto& module = modulePair.second;
-                maxX = std::max(maxX, module->getX() + module->getWidth());
-                maxY = std::max(maxY, module->getY() + module->getHeight());
-            }
-        }
-    }
-    
-    // Calculate total area
-    totalArea = maxX * maxY;
-    std::cout << "Total placement area: " << totalArea << std::endl;
+    // NEW: Rebuild global contours for accurate area calculation
+    rebuildGlobalContours();
     
     // Update contour nodes
     updateContourNodes();
@@ -117,6 +97,9 @@ bool HBStarTree::pack() {
                 node->getASFTree()->emergencyRecovery();
             }
         }
+        
+        // NEW: Rebuild contours one final time after emergency recovery
+        rebuildGlobalContours();
         
         // One final overlap check
         if (hasOverlap()) {

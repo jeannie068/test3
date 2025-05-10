@@ -85,12 +85,12 @@ private:
     void clearAffectedCache();
 
     // Constants for placement parameters
-    static constexpr int BUFFER = 10;
-    static constexpr int LARGE_BUFFER = 20;
-    static constexpr int EXTRA_LARGE_BUFFER = 30;
+    static constexpr int BUFFER = 1;
+    static constexpr int LARGE_BUFFER = 2;
+    static constexpr int EXTRA_LARGE_BUFFER = 5;
     static constexpr int MAX_ROW_WIDTH = 2000;
     static constexpr int MAX_FIX_ITERATIONS = 15;
-    static constexpr int LARGE_MODULE_THRESHOLD = 8000; // Area threshold for large modules
+    static constexpr int LARGE_MODULE_THRESHOLD = 10000; // Area threshold for large modules
     
     // New helper functions
     bool isRegularModule(const std::string& moduleName) const;
@@ -275,6 +275,11 @@ public:
      * @return Random node from the tree, or nullptr if empty
      */
     shared_ptr<HBStarTreeNode> randomNode(std::mt19937& rng);
+
+    /**
+     * NEW: Method to rebuild the global contours and update area calculation
+     */
+    void rebuildGlobalContours();
     
     /**
      * Creates a deep copy of this HB*-tree

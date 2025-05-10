@@ -75,6 +75,12 @@ Contour::ContourNode* Contour::findNode(int x) const {
     return current;
 }
 
+void Contour::initializeSentinel(int layoutWidth) {
+    clear();
+    // Use a reasonable width instead of numeric_limits<int>::max()
+    addSegment(0, layoutWidth, 0);
+}
+
 /**
  * Helper method to insert a node after a specific node
  */
@@ -208,6 +214,53 @@ void Contour::addSegment(int start, int end, int height) {
         }
     }
 }
+
+/**
+ * NEW: Method to remove a segment from a contour
+ * This should be added to the Contour class
+ */
+void Contour::removeSegment(const ContourSegment& segment) {
+    // Find nodes that correspond to this segment
+    ContourNode* startNode = nullptr;
+    ContourNode* endNode = nullptr;
+    ContourNode* current = head;
+    
+    // Find the start node (node with x == segment.start)
+    while (current) {
+        if (current->x == segment.start && current->height == segment.height) {
+            startNode = current;
+            break;
+        }
+        current = current->next;
+    }
+    
+    // Find the end node (node with x == segment.end)
+    current = startNode ? startNode->next : nullptr;
+    while (current) {
+        if (current->x == segment.end) {
+            endNode = current;
+            break;
+        }
+        current = current->next;
+    }
+    
+    // If we found both nodes that define the segment, we can remove or modify it
+    if (startNode && endNode) {
+        // Change the height of the start node to the height of the node before it
+        // This effectively removes the segment's contribution to the contour
+        if (startNode->prev) {
+            startNode->height = startNode->prev->height;
+        } else {
+            // If there's no previous node, set height to 0 or to the appropriate baseline
+            startNode->height = 0;
+        }
+        
+        // If the segment was part of a larger contour, we need to update the links
+        // This is a simplification - a full implementation would handle more complex cases
+        // Consider consulting a computational geometry library for robust contour operations
+    }
+}
+
 
 /**
  * Gets the height of the contour at a specific range

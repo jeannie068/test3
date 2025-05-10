@@ -317,20 +317,22 @@ shared_ptr<HBStarTreeNode> HBStarTree::randomNode(std::mt19937& rng) {
  * New function to implement global placement strategy with offset management
  */
 void HBStarTree::improveGlobalPlacement() {
-    // Phase 1: Place large modules first
+    // Phase 1: Place large modules with minimum spacing
     placeLargeModules();
     
-    // Phase 2: Sort symmetry groups by area for better placement
+    // Organize symmetry groups in decreasing order of area
     sortSymmetryGroupsByArea();
     
-    // Now place symmetry groups in a more compact grid layout
-    int maxRowWidth = MAX_ROW_WIDTH - 100; // Reduce max row width to ensure compactness
-    int currentX = 0;
-    int currentY = 0;
-    int rowHeight = 0;
-    int largeModulesMaxY = 0;
+    // Create contour-based placement for optimal compaction
+    std::shared_ptr<Contour> globalHorizontalContour = std::make_shared<Contour>();
+    std::shared_ptr<Contour> globalVerticalContour = std::make_shared<Contour>();
     
-    // Find maximum Y for large modules
+    // Initialize global contours with reasonable width
+    globalHorizontalContour->addSegment(0, 10000, 0);
+    globalVerticalContour->addSegment(0, 10000, 0);
+    
+    // Find maximum Y of large modules to start placement
+    int largeModulesMaxY = 0;
     for (const auto& pair : modules) {
         const auto& module = pair.second;
         
@@ -340,23 +342,31 @@ void HBStarTree::improveGlobalPlacement() {
         }
     }
     
-    // Add a smaller buffer after large modules
-    currentY = largeModulesMaxY + BUFFER;
+    // Add minimal buffer after large modules
+    int startY = largeModulesMaxY + 1;
     
-    // Place symmetry groups in a grid to minimize overall width
+    // Phase 2: Place symmetry groups using contour-based approach
     for (const auto& group : symmetryGroups) {
         // Get dimensions of this group
         auto dimensions = getSymmetryIslandDimensions(group);
         int width = dimensions.first;
         int height = dimensions.second;
         
-        // Check if adding this group to current row would exceed width limit
-        if (currentX + width > maxRowWidth && currentX > 0) {
-            // Start a new row
-            currentX = 0;
-            currentY += rowHeight + BUFFER;
-            rowHeight = 0;
+        // Find best position along horizontal contour for minimal area
+        int bestX = 0;
+        int bestY = std::numeric_limits<int>::max();
+        int searchStep = 5; // Step size for efficiency
+        
+        for (int testX = 0; testX < 5000; testX += searchStep) {
+            int yHeight = globalHorizontalContour->getHeight(testX, testX + width);
+            if (yHeight < bestY) {
+                bestX = testX;
+                bestY = yHeight;
+            }
         }
+        
+        // Ensure we don't place below start Y
+        bestY = std::max(bestY, startY);
         
         // Get the hierarchy node for this group
         auto it = symmetryGroupNodes.find(group->getName());
@@ -366,21 +376,17 @@ void HBStarTree::improveGlobalPlacement() {
         }
         
         // Position this symmetry group with exact coordinates
-        positionSymmetryIsland(it->second, currentX, currentY);
+        positionSymmetryIsland(it->second, bestX, bestY);
         
-        // Update for next placement
-        currentX += width + BUFFER; // Reduced buffer
-        rowHeight = std::max(rowHeight, height);
+        // Update contours with this symmetry island
+        globalHorizontalContour->addSegment(bestX, bestX + width, bestY + height);
+        globalVerticalContour->addSegment(bestY, bestY + height, bestX + width);
         
         std::cout << "Placed symmetry group " << group->getName() << " at (" 
-                  << currentX - width - BUFFER << "," << currentY << ")" << std::endl;
+                  << bestX << "," << bestY << ")" << std::endl;
     }
     
-    // Phase 3: Place remaining regular modules in a compact grid
-    currentY += rowHeight + BUFFER;
-    currentX = 0;
-    rowHeight = 0;
-    
+    // Phase 3: Place remaining regular modules using contour-based approach
     // Collect regular modules (not in symmetry groups)
     std::vector<std::pair<std::string, std::shared_ptr<Module>>> regularModules;
     
@@ -408,33 +414,36 @@ void HBStarTree::improveGlobalPlacement() {
                    (b.second->getWidth() * b.second->getHeight());
         });
     
-    // Place remaining modules in a grid with minimal gaps
+    // Place regular modules using contour-based approach
     for (const auto& pair : regularModules) {
         const auto& module = pair.second;
+        int width = module->getWidth();
+        int height = module->getHeight();
         
-        // Check if adding this module to current row would exceed width limit
-        if (currentX + module->getWidth() > maxRowWidth && currentX > 0) {
-            // Start a new row
-            currentX = 0;
-            currentY += rowHeight + BUFFER;
-            rowHeight = 0;
+        // Find best position along horizontal contour
+        int bestX = 0;
+        int bestY = std::numeric_limits<int>::max();
+        
+        for (int testX = 0; testX < 5000; testX += 5) {
+            int yHeight = globalHorizontalContour->getHeight(testX, testX + width);
+            if (yHeight < bestY) {
+                bestX = testX;
+                bestY = yHeight;
+            }
         }
         
-        // Position this module
-        module->setPosition(currentX, currentY);
+        // Position module
+        module->setPosition(bestX, bestY);
         
-        // Update for next placement
-        currentX += module->getWidth() + BUFFER; // Smaller buffer
-        rowHeight = std::max(rowHeight, module->getHeight());
+        // Update contours
+        globalHorizontalContour->addSegment(bestX, bestX + width, bestY + height);
+        globalVerticalContour->addSegment(bestY, bestY + height, bestX + width);
         
         std::cout << "Placed regular module " << pair.first << " at (" 
                   << module->getX() << "," << module->getY() << ")" << std::endl;
     }
     
-    // Phase 4: Apply compaction to reduce any remaining space
-    // compactPlacement();
-    
-    // Phase 5: Fix any overlaps that might have been introduced
+    // Phase 4: Fix any overlaps that might have been introduced
     if (hasOverlap()) {
         std::cout << "Fixing any remaining overlaps after placement optimization..." << std::endl;
         fixGlobalOverlaps();
@@ -447,6 +456,9 @@ void HBStarTree::improveGlobalPlacement() {
             asfTree->enforceSymmetryConstraints();
         }
     }
+    
+    // Rebuild global contours for accurate area calculation
+    rebuildGlobalContours();
     
     std::cout << "Global placement strategy completed" << std::endl;
 }
@@ -465,7 +477,9 @@ void HBStarTree::sortSymmetryGroupsByArea() {
 
 /**
  * Position a symmetry island at the specified coordinates
+ * FIX: Remove old contours before adding new ones
  */
+// In HBStarTree::positionSymmetryIsland - improved removal of old contours
 bool HBStarTree::positionSymmetryIsland(std::shared_ptr<HBStarTreeNode> hierarchyNode, int x, int y) {
     if (!hierarchyNode || hierarchyNode->getType() != HBNodeType::HIERARCHY) return false;
     
@@ -491,6 +505,24 @@ bool HBStarTree::positionSymmetryIsland(std::shared_ptr<HBStarTreeNode> hierarch
     int shiftX = x - minX;
     int shiftY = y - minY;
     
+    // Get the island's original contours before shifting
+    auto oldContours = asfTree->getContours();
+    auto oldHorizontalSegments = oldContours.first->getSegments();
+    auto oldVerticalSegments = oldContours.second->getSegments();
+    
+    // Properly remove old contour segments from global contours
+    for (const auto& segment : oldHorizontalSegments) {
+        // Create a temporary segment with the same parameters to avoid modifying the original
+        ContourSegment tempSegment(segment.start, segment.end, segment.height);
+        // Use removeSegment method to remove this segment
+        horizontalContour->removeSegment(tempSegment);
+    }
+    
+    for (const auto& segment : oldVerticalSegments) {
+        ContourSegment tempSegment(segment.start, segment.end, segment.height);
+        verticalContour->removeSegment(tempSegment);
+    }
+    
     // Update symmetry axis position
     if (asfTree->getSymmetryGroup()->getType() == SymmetryType::VERTICAL) {
         double oldAxis = asfTree->getSymmetryAxisPosition();
@@ -510,28 +542,35 @@ bool HBStarTree::positionSymmetryIsland(std::shared_ptr<HBStarTreeNode> hierarch
               << " at (" << x << "," << y << ") with shift (" 
               << shiftX << "," << shiftY << ")" << std::endl;
     
-    // Update horizontal contour
-    auto segments = asfTree->getContours().first->getSegments();
+    // Rebuild the internal contours of the ASF-B*-tree
+    asfTree->rebuildLocalContours();
+    
+    // Get the updated contours after shifting and rebuilding
+    auto newContours = asfTree->getContours();
+    auto segments = newContours.first->getSegments();
+    auto vSegments = newContours.second->getSegments();
+    
+    // Update horizontal contour with the new segments
     for (const auto& segment : segments) {
         horizontalContour->addSegment(
-            segment.start + shiftX,
-            segment.end + shiftX,
-            segment.height + shiftY
+            segment.start,
+            segment.end,
+            segment.height
         );
     }
     
-    // Update vertical contour
-    auto vSegments = asfTree->getContours().second->getSegments();
+    // Update vertical contour with the new segments
     for (const auto& segment : vSegments) {
         verticalContour->addSegment(
-            segment.start + shiftY,
-            segment.end + shiftY,
-            segment.height + shiftX
+            segment.start,
+            segment.end,
+            segment.height
         );
     }
     
     return true;
 }
+
 
 /**
  * Get the height of a symmetry island
@@ -706,8 +745,8 @@ HBStarTree::findAllOverlappingModulePairs() const {
 bool HBStarTree::fixGlobalOverlaps() {
     bool anyOverlapFixed = false;
     int fixIterations = 0;
+    const int MAX_FIX_ITERATIONS = 50; // Increased from current value
     
-    // Continue until no more overlaps or max iterations reached
     while (fixIterations < MAX_FIX_ITERATIONS) {
         auto overlappingPairs = findAllOverlaps();
         if (overlappingPairs.empty()) {
@@ -741,7 +780,7 @@ bool HBStarTree::fixGlobalOverlaps() {
             }
         }
         
-        // First fix overlaps within symmetry groups
+        // First fix overlaps within symmetry groups by enforcing constraints
         for (auto& entry : groupedOverlaps) {
             const std::string& groupName = entry.first;
             auto& pairs = entry.second;
@@ -749,60 +788,52 @@ bool HBStarTree::fixGlobalOverlaps() {
             
             if (pairs.empty()) continue;
             
-            // Attempt to resolve intra-group overlaps by adjusting the symmetry axis
+            // Fix intra-group overlaps by enforcing symmetry constraints
             auto symGroupNode = getSymmetryGroupNode(groupName);
             if (symGroupNode) {
                 auto asfTree = symGroupNode->getASFTree();
                 if (asfTree) {
-                    // Try adjusting symmetry axis position
-                    double oldAxis = asfTree->getSymmetryAxisPosition();
-                    // For vertical symmetry, try increasing the axis position
-                    if (asfTree->getSymmetryGroup()->getType() == SymmetryType::VERTICAL) {
-                        double newAxis = oldAxis + 5.0;  // Increase axis by 5 units
-                        asfTree->getSymmetryGroup()->setAxisPosition(newAxis);
-                        
-                        // Recompute positions with new axis
-                        if (asfTree->pack()) {
-                            groupFixed = true;
-                            fixedAny = true;
-                        } else {
-                            // Revert if unsuccessful
-                            asfTree->getSymmetryGroup()->setAxisPosition(oldAxis);
-                        }
+                    // Apply symmetry constraint enforcement to fix overlaps
+                    asfTree->enforceSymmetryConstraints();
+                    
+                    // Check if it resolved overlaps
+                    if (!asfTree->checkForOverlaps()) {
+                        groupFixed = true;
+                        fixedAny = true;
+                        std::cout << "Fixed overlaps in symmetry group " << groupName 
+                                  << " by enforcing constraints" << std::endl;
                     } else {
-                        // Similar logic for horizontal symmetry
-                        double newAxis = oldAxis + 5.0;  // Increase axis by 5 units
-                        asfTree->getSymmetryGroup()->setAxisPosition(newAxis);
-                        
-                        // Recompute positions with new axis
-                        if (asfTree->pack()) {
+                        // If not fixed, try vertical separation
+                        for (size_t i = 1; i < pairs.size(); i++) {
+                            auto prevModule = pairs[i-1].first;
+                            auto currModule = pairs[i].first;
+                            
+                            // Separate vertically with minimal gap
+                            int newY = prevModule->getY() + prevModule->getHeight() + 1;
+                            currModule->setPosition(currModule->getX(), newY);
+                            
+                            // Also move the symmetric pair
+                            auto symModule = pairs[i].second;
+                            symModule->setPosition(symModule->getX(), newY);
+                            
                             groupFixed = true;
                             fixedAny = true;
-                        } else {
-                            // Revert if unsuccessful
-                            asfTree->getSymmetryGroup()->setAxisPosition(oldAxis);
                         }
                     }
                     
-                    // If still not fixed, try emergency recovery
-                    if (!groupFixed) {
-                        asfTree->emergencyRecovery();
-                        if (!asfTree->checkForOverlaps()) {
-                            groupFixed = true;
-                            fixedAny = true;
-                        }
-                    }
+                    // Final enforcement to ensure symmetry is maintained
+                    asfTree->enforceSymmetryConstraints();
                 }
             }
             
-            // If still not fixed, try shifting the entire group
+            // If that didn't work, shift the entire group
             if (!groupFixed) {
-                shiftSymmetryGroup(groupName, 0, EXTRA_LARGE_BUFFER);
+                shiftSymmetryGroup(groupName, 0, 10); // Minimal shift of 10 units vertically
                 fixedAny = true;
             }
         }
         
-        // Process remaining regular module overlaps
+        // Process remaining module overlaps with minimal displacements
         for (const auto& pair : overlappingPairs) {
             std::string group1 = findSymmetryGroupForModule(pair.first->getName());
             std::string group2 = findSymmetryGroupForModule(pair.second->getName());
@@ -822,39 +853,40 @@ bool HBStarTree::fixGlobalOverlaps() {
                 int overlapWidth = getOverlapWidth(pair.first, pair.second);
                 int overlapHeight = getOverlapHeight(pair.first, pair.second);
                 
-                // Choose optimal direction to shift (minimum displacement)
-                int shiftRight = 0, shiftDown = 0;
-                
-                // Calculate distances to each edge
-                int distToLeft = moduleToMove->getX() - otherModule->getX();
-                int distToRight = (otherModule->getX() + otherModule->getWidth()) - moduleToMove->getX();
-                int distToTop = (otherModule->getY() + otherModule->getHeight()) - moduleToMove->getY();
-                int distToBottom = moduleToMove->getY() - otherModule->getY();
-                
-                // Find minimum shift required
-                int minDist = std::min({ 
-                    abs(distToLeft - moduleToMove->getWidth()), 
-                    abs(distToRight), 
-                    abs(distToTop), 
-                    abs(distToBottom - moduleToMove->getHeight()) 
-                });
-                
-                // Determine optimal shift
-                if (minDist == abs(distToLeft - moduleToMove->getWidth())) {
-                    shiftRight = -(overlapWidth + 1);
-                } else if (minDist == abs(distToRight)) {
-                    shiftRight = overlapWidth + 1;
-                } else if (minDist == abs(distToTop)) {
-                    shiftDown = overlapHeight + 1;
+                // Choose minimal displacement direction
+                if (overlapWidth <= overlapHeight) {
+                    // Horizontal shift with minimal displacement
+                    int shiftX = 0;
+                    
+                    if (moduleToMove->getX() < otherModule->getX()) {
+                        // Move left
+                        shiftX = -(overlapWidth + 1);
+                    } else {
+                        // Move right
+                        shiftX = overlapWidth + 1;
+                    }
+                    
+                    moduleToMove->setPosition(
+                        moduleToMove->getX() + shiftX,
+                        moduleToMove->getY()
+                    );
                 } else {
-                    shiftDown = -(overlapHeight + 1);
+                    // Vertical shift with minimal displacement
+                    int shiftY = 0;
+                    
+                    if (moduleToMove->getY() < otherModule->getY()) {
+                        // Move up
+                        shiftY = -(overlapHeight + 1);
+                    } else {
+                        // Move down
+                        shiftY = overlapHeight + 1;
+                    }
+                    
+                    moduleToMove->setPosition(
+                        moduleToMove->getX(),
+                        moduleToMove->getY() + shiftY
+                    );
                 }
-                
-                // Apply the shift
-                moduleToMove->setPosition(
-                    moduleToMove->getX() + shiftRight,
-                    moduleToMove->getY() + shiftDown
-                );
                 
                 fixedAny = true;
             }
@@ -871,9 +903,10 @@ bool HBStarTree::fixGlobalOverlaps() {
                     symGroupName = group1;
                 }
                 
-                // Move the regular module away from the symmetry group
+                // Move the regular module away with minimal displacement
                 int overlapHeight = getOverlapHeight(pair.first, pair.second);
-                shiftModuleDown(regularModule, overlapHeight + BUFFER);
+                // Add just 1 unit more than needed
+                shiftModuleDown(regularModule, overlapHeight + 1);
                 
                 fixedAny = true;
             }
@@ -882,9 +915,9 @@ bool HBStarTree::fixGlobalOverlaps() {
                 // Determine which group to move (smaller area)
                 std::string groupToMove = (getGroupArea(group1) <= getGroupArea(group2)) ? group1 : group2;
                 
-                // Shift the group vertically
+                // Shift the group vertically with minimal displacement
                 int overlapHeight = getOverlapHeight(pair.first, pair.second);
-                shiftSymmetryGroup(groupToMove, 0, overlapHeight + LARGE_BUFFER);
+                shiftSymmetryGroup(groupToMove, 0, overlapHeight + 1);
                 
                 fixedAny = true;
             }
@@ -892,12 +925,12 @@ bool HBStarTree::fixGlobalOverlaps() {
         
         // If we couldn't fix any overlaps this iteration, try more drastic measures
         if (!fixedAny && !overlappingPairs.empty()) {
-            // Spread out all symmetry groups
-            int offsetY = EXTRA_LARGE_BUFFER;
+            // Spread out all symmetry groups with minimal spacing
+            int offsetY = 10;
             
             for (size_t i = 1; i < symmetryGroups.size(); ++i) {
                 shiftSymmetryGroup(symmetryGroups[i]->getName(), 0, offsetY);
-                offsetY += EXTRA_LARGE_BUFFER;
+                offsetY += 10;
             }
             
             fixedAny = true;
@@ -910,6 +943,12 @@ bool HBStarTree::fixGlobalOverlaps() {
         }
         
         anyOverlapFixed = true;
+        
+        // Check if all overlaps are fixed
+        if (!hasOverlap()) {
+            std::cout << "All overlaps successfully fixed in iteration " << fixIterations << std::endl;
+            break;
+        }
     }
     
     if (fixIterations >= MAX_FIX_ITERATIONS) {
@@ -922,6 +961,8 @@ bool HBStarTree::fixGlobalOverlaps() {
                 auto asfTree = symGroupNode->getASFTree();
                 if (asfTree) {
                     asfTree->emergencyRecovery();
+                    // Enforce constraints after recovery
+                    asfTree->enforceSymmetryConstraints();
                 }
             }
         }
@@ -1014,8 +1055,8 @@ void HBStarTree::placeLargeModules() {
         xPosition += module->getWidth() + EXTRA_LARGE_BUFFER;
         rowHeight = std::max(rowHeight, module->getHeight());
         
-        std::cout << "Placed large module " << pair.first << " at (" 
-                  << module->getX() << "," << module->getY() << ")" << std::endl;
+        // std::cout << "Placed large module " << pair.first << " at (" 
+        //           << module->getX() << "," << module->getY() << ")" << std::endl;
     }
 }
 
@@ -1063,6 +1104,7 @@ HBStarTree::findAllOverlaps() const {
                 int overlapHeight = getOverlapHeight(module1, module2);
                 int overlapArea = overlapWidth * overlapHeight;
                 
+                /*
                 std::cout << "CRITICAL OVERLAP: " << module1->getName() << " and " 
                           << module2->getName() << " overlap by " << overlapArea 
                           << " square units" << std::endl;
@@ -1072,6 +1114,7 @@ HBStarTree::findAllOverlaps() const {
                 std::cout << "  " << module2->getName() << ": (" << module2->getX() 
                           << "," << module2->getY() << ") size=" << module2->getWidth() 
                           << "x" << module2->getHeight() << std::endl;
+                */
             }
         }
     }
@@ -1153,8 +1196,8 @@ void HBStarTree::shiftModuleRight(const std::shared_ptr<Module>& module, int shi
     // Ensure we don't go below 0
     newX = std::max(0, newX);
     
-    std::cout << "Shifting module " << module->getName() << " horizontally from " 
-              << module->getX() << " to " << newX << std::endl;
+    // std::cout << "Shifting module " << module->getName() << " horizontally from " 
+    //           << module->getX() << " to " << newX << std::endl;
     
     module->setPosition(newX, module->getY());
 }
@@ -1169,8 +1212,8 @@ void HBStarTree::shiftModuleDown(const std::shared_ptr<Module>& module, int shif
     // Ensure we don't go below 0
     newY = std::max(0, newY);
     
-    std::cout << "Shifting module " << module->getName() << " vertically from " 
-              << module->getY() << " to " << newY << std::endl;
+    // std::cout << "Shifting module " << module->getName() << " vertically from " 
+    //           << module->getY() << " to " << newY << std::endl;
     
     module->setPosition(module->getX(), newY);
 }
@@ -1214,4 +1257,103 @@ std::pair<int, int> HBStarTree::getSymmetryIslandDimensions(
 bool HBStarTree::verifyNoOverlaps() const {
     auto overlaps = findAllOverlaps();
     return overlaps.empty();
+}
+
+/**
+ * NEW: Method to rebuild the global contours and update area calculation
+ */
+void HBStarTree::rebuildGlobalContours() {
+    // Clear global contours
+    horizontalContour->clear();
+    verticalContour->clear();
+    
+    // Find maximum dimensions for reasonable width/height limits
+    int maxWidth = 0;
+    int maxHeight = 0;
+    
+    // Examine all modules to find the layout dimensions
+    for (const auto& pair : modules) {
+        const auto& module = pair.second;
+        maxWidth = std::max(maxWidth, module->getX() + module->getWidth());
+        maxHeight = std::max(maxHeight, module->getY() + module->getHeight());
+    }
+    
+    // Also check modules in symmetry groups
+    for (const auto& pair : symmetryGroupNodes) {
+        auto asfTree = pair.second->getASFTree();
+        if (asfTree) {
+            for (const auto& modPair : asfTree->getModules()) {
+                const auto& module = modPair.second;
+                maxWidth = std::max(maxWidth, module->getX() + module->getWidth());
+                maxHeight = std::max(maxHeight, module->getY() + module->getHeight());
+            }
+        }
+    }
+    
+    // Add margin for safety
+    maxWidth = maxWidth * 2;
+    maxHeight = maxHeight * 2;
+    
+    // Initialize horizontal contour with reasonable width
+    horizontalContour->initializeSentinel(maxWidth + 100);
+    
+    // Initialize vertical contour
+    verticalContour->initializeSentinel(maxHeight + 100);
+    
+    // Add all modules to the contours
+    for (const auto& pair : modules) {
+        const auto& module = pair.second;
+        horizontalContour->addSegment(
+            module->getX(), 
+            module->getX() + module->getWidth(), 
+            module->getY() + module->getHeight()
+        );
+        
+        verticalContour->addSegment(
+            module->getY(), 
+            module->getY() + module->getHeight(), 
+            module->getX() + module->getWidth()
+        );
+    }
+    
+    // Add all symmetry island contours
+    for (const auto& pair : symmetryGroupNodes) {
+        auto asfTree = pair.second->getASFTree();
+        if (asfTree) {
+            auto contours = asfTree->getContours();
+            auto hSegs = contours.first->getSegments();
+            auto vSegs = contours.second->getSegments();
+            
+            for (const auto& seg : hSegs) {
+                horizontalContour->addSegment(seg.start, seg.end, seg.height);
+            }
+            
+            for (const auto& seg : vSegs) {
+                verticalContour->addSegment(seg.start, seg.end, seg.height);
+            }
+        }
+    }
+    
+    // Recalculate total area
+    int maxX = 0, maxY = 0;
+    
+    for (const auto& pair : modules) {
+        const auto& module = pair.second;
+        maxX = std::max(maxX, module->getX() + module->getWidth());
+        maxY = std::max(maxY, module->getY() + module->getHeight());
+    }
+    
+    for (const auto& pair : symmetryGroupNodes) {
+        auto asfTree = pair.second->getASFTree();
+        if (asfTree) {
+            for (const auto& modPair : asfTree->getModules()) {
+                const auto& module = modPair.second;
+                maxX = std::max(maxX, module->getX() + module->getWidth());
+                maxY = std::max(maxY, module->getY() + module->getHeight());
+            }
+        }
+    }
+    
+    totalArea = maxX * maxY;
+    std::cout << "Rebuilt global contours and updated area to: " << totalArea << std::endl;
 }

@@ -18,12 +18,11 @@ bool Module::overlaps(const Module& other) const {
         return false; // A module can't overlap with itself
     }
     
-    // Next, check if we're comparing a module with the same name
-    if (name == other.name) {
-        return false; // Modules with the same name are considered the same module
-    }
+    // No longer skipping by name - even same-named modules could overlap!
+    // The check below is removed:
+    // if (name == other.name) return false;
     
-    // Now check for actual geometric overlap
+    // Check for actual geometric overlap
     // No horizontal overlap if one is to the right of the other
     if (x + getWidth() <= other.x || other.x + other.getWidth() <= x) {
         return false;

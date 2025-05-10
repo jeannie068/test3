@@ -79,6 +79,8 @@ public:
      * Clears the contour
      */
     void clear();
+
+    void initializeSentinel(int layoutWidth);
     
     /**
      * Adds a segment to the contour
@@ -88,6 +90,8 @@ public:
      * @param height Height of the segment
      */
     void addSegment(int start, int end, int height);
+
+    void removeSegment(const ContourSegment& segment);
     
     /**
      * Gets the height of the contour at a specific range
